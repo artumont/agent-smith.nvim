@@ -54,9 +54,9 @@ local function centered_config(title, opts)
   return {
     relative = "editor",
     style = "minimal",
-    border = "rounded",
-    title = title,
-    title_pos = "center",
+    border = opts.border or "rounded",
+    title = opts.title == false and nil or (opts.title or title),
+    title_pos = opts.title_pos or "center",
     width = width,
     height = height,
     row = math.floor((ui_h - height) / 2),
@@ -68,7 +68,7 @@ end
 ---
 ---@param title string Window title
 ---@param lines? string[] Initial buffer lines
----@param opts? table Options: { enter: boolean, width: number, height: number }
+---@param opts? table Options: { enter: boolean, width: number, height: number, border: string, title: string|false, title_pos: string }
 ---@return number win Window handle
 ---@return number buf Buffer handle
 function M.create(title, lines, opts)
