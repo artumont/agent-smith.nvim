@@ -27,6 +27,15 @@
 
 local M = {}
 
+--- Work on Unix and Windows without relying on a version-specific vim.fs API.
+---@param path string
+---@return boolean
+local function is_absolute(path)
+  return path:sub(1, 1) == "/"
+    or path:match("^%a:[/\\\\]") ~= nil
+    or path:sub(1, 2) == "\\\\"
+end
+
 --- Project root directory (git root or cwd).
 ---@type string|nil
 M.root = nil
@@ -53,7 +62,7 @@ end
 ---@param path string File path (relative or absolute)
 ---@return string|nil content File contents, or nil if not found
 function M.resolve(path)
-  local full = vim.fs.isabspath(path)
+  local full = is_absolute(path)
     and path
     or vim.fs.joinpath(M.root or vim.fn.getcwd(), path)
   local ok, lines = pcall(vim.fn.readfile, full)
