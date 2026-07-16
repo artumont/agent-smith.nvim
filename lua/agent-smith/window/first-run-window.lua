@@ -31,9 +31,11 @@ function M.open(cb)
   vim.bo[buf].modifiable = false
   vim.bo[buf].readonly = true
   vim.wo[win].winhighlight = "Normal:NormalFloat,FloatBorder:Comment"
+  vim.api.nvim_set_hl(0, "AgentSmithFirstRunRed", { fg = "#ff5555", bold = true })
+  vim.api.nvim_set_hl(0, "AgentSmithFirstRunBlue", { fg = "#61afef", bold = true })
   vim.api.nvim_buf_add_highlight(buf, namespace, "Title", 0, 0, -1)
-  vim.api.nvim_buf_add_highlight(buf, namespace, "ErrorMsg", 2, 0, -1)
-  vim.api.nvim_buf_add_highlight(buf, namespace, "String", 5, 0, -1)
+  vim.api.nvim_buf_add_highlight(buf, namespace, "AgentSmithFirstRunRed", 2, 0, -1)
+  vim.api.nvim_buf_add_highlight(buf, namespace, "AgentSmithFirstRunBlue", 5, 0, -1)
   vim.api.nvim_buf_add_highlight(buf, namespace, "Comment", 8, 0, -1)
 
   local finished = false
