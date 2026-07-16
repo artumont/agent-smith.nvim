@@ -185,11 +185,15 @@ All operations are accessed via Lua functions: >lua
   Semantic search into quickfix list.
 
   *:AgentSmithVibe*       |smith.vibe()|
-  Open-ended analysis into quickfix list.
-  Uses OpenCode's `build` agent to read project context.
-  Prompt contract forbids direct writes; file-change requests return per-file
-  approval proposals, and Agent-Smith applies only approved proposals.
-  Result header: <CR> opens location; q or Esc closes results.
+  Sandboxed two-phase agentic workflow.
+  1. Copies current tracked and untracked nonignored project files to a unique
+     temporary session directory.
+  2. Model inspects the sandbox and returns a plan plus editable file scope.
+  3. User approves or rejects plan before execution.
+  4. Model executes inside sandbox using only approved paths.
+  5. Agent-Smith diffs sandbox against originals and asks approval per file.
+  Original files remain untouched until a file proposal is approved.
+  Analysis-only results open Quickfix; <CR> opens location, q or Esc closes.
 
   *:AgentSmithTutorial*   |smith.tutorial()|
   Generate a tutorial in a split window.
@@ -507,6 +511,16 @@ Request lifecycle:                                 *agent-smith-lifecycle*
      - Visual: imports extracted, selection replaced
      - Search: quickfix list populated
      - Multi-file: approval flow per file
+
+Sandboxed Vibe lifecycle:                      *agent-smith-vibe-sandbox*
+
+  - Session root uses a unique system temporary directory
+  - Project files are copied; originals are never moved
+  - Git repos copy tracked plus untracked nonignored files
+  - Plan paths must be repository-relative and cannot escape sandbox
+  - Changes outside approved plan scope are ignored and reported
+  - Sandbox is deleted after completion, cancellation, or failure
+  - New, modified, and deleted files use the same diff approval panel
 
 Provider contract:                              *agent-smith-provider-contract*
 

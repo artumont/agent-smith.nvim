@@ -42,6 +42,7 @@ agent-smith-setup	agent-smith.txt	/*agent-smith-setup*
 agent-smith-state	agent-smith.txt	/*agent-smith-state*
 agent-smith-telescope-extension	agent-smith.txt	/*agent-smith-telescope-extension*
 agent-smith-troubleshooting	agent-smith.txt	/*agent-smith-troubleshooting*
+agent-smith-vibe-sandbox	agent-smith.txt	/*agent-smith-vibe-sandbox*
 agent-smith-worker-extension	agent-smith.txt	/*agent-smith-worker-extension*
 agent-smith.txt	agent-smith.txt	/*agent-smith.txt*
 smith.Extensions	agent-smith.txt	/*smith.Extensions*
