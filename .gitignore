@@ -39,3 +39,12 @@ luac.out
 *.x86_64
 *.hex
 
+# Editor and temporary files
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+*.swo
+.vscode/
+.idea/
+
