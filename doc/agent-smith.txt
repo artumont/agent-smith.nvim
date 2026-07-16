@@ -176,6 +176,7 @@ All operations are accessed via Lua functions: >lua
 
   *:AgentSmithVisual*     |smith.visual()|
   Visual selection edit. Select code, invoke, type instructions.
+  While request runs, inline spinners render above and below selection.
 
   *:AgentSmithMultiFile*  |smith.multi_file()|
   Multi-file edit with per-file approval.
