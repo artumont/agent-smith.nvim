@@ -1,63 +1,51 @@
 --- agent-smith/window/approval-window.lua
 ---
---- Window for approving/rejecting multi-file changes.
----
---- Display:
---- Shows:
---- 1. File path (top line)
---- 2. Keymap legend
---- 3. Proposed content
----
---- Keymaps:
---- - <CR>: Approve this change (apply to file)
---- - q: Reject this change (skip)
---- - Q: Reject all remaining changes
----
---- Flow:
---- Each file change gets its own approval window. The user processes
---- them one at a time. After all changes, the multi-file module
---- reports how many were applied.
+--- Review and approve one proposed file change. Nothing is written until the
+--- user explicitly accepts it.
 
 local Window = require("agent-smith.window")
 
 local M = {}
 
---- Show a file change for approval.
----
----@param change table { path: string, content: string }
+--- Show a file change proposal for review.
+---@param change table { path: string, content: string, snapshot?: string }
 ---@param cb function Callback: "approve" | "reject" | "reject_all"
----@return nil
 function M.approve(change, cb)
+  local action = change.snapshot and "Replace existing file" or "Create new file"
   local lines = {
-    change.path,
+    "Review proposed file change",
+    "This change has NOT been applied.",
     "",
-    "<CR>: approve   q: reject   Q: reject all",
+    "Action: " .. action,
+    "Target: " .. change.path,
     "",
-    unpack(vim.split(change.content, "\n", { plain = true })),
+    "<CR> apply this change    q / Esc skip    Q skip all remaining",
+    "────────────────── Proposed complete file content ──────────────────",
+    "",
   }
+  vim.list_extend(lines, vim.split(change.content, "\n", { plain = true }))
 
-  local win, buf = Window.create(
-    " Agent-Smith File Change ",
-    lines,
-    { enter = true }
-  )
-
+  local win, buf = Window.create(" Agent-Smith Change Proposal ", lines, { enter = true })
   vim.bo[buf].modifiable = false
+  vim.bo[buf].readonly = true
+  vim.wo[win].cursorline = true
 
   vim.keymap.set("n", "<CR>", function()
     Window.close(win)
     cb("approve")
-  end, { buffer = buf })
+  end, { buffer = buf, nowait = true, desc = "Apply proposed change" })
 
-  vim.keymap.set("n", "q", function()
+  local function reject()
     Window.close(win)
     cb("reject")
-  end, { buffer = buf })
+  end
+  vim.keymap.set("n", "q", reject, { buffer = buf, nowait = true, desc = "Skip proposed change" })
+  vim.keymap.set("n", "<Esc>", reject, { buffer = buf, nowait = true, desc = "Skip proposed change" })
 
   vim.keymap.set("n", "Q", function()
     Window.close(win)
     cb("reject_all")
-  end, { buffer = buf })
+  end, { buffer = buf, nowait = true, desc = "Skip all remaining changes" })
 end
 
 return M
