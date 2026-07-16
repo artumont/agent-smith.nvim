@@ -19,6 +19,7 @@
 
 local Prompt = require("agent-smith.prompt")
 local Qfix = require("agent-smith.ops.qfix-helpers")
+local Multi = require("agent-smith.ops.multi-file")
 
 local M = {}
 local results_namespace = vim.api.nvim_create_namespace("agent-smith.vibe-results")
@@ -73,6 +74,15 @@ function M.run(state, opts)
         Statusline.stop(context)
         if status ~= "success" then
           return vim.notify("Vibe failed: " .. status, vim.log.levels.ERROR)
+        end
+
+        -- File-changing Vibe requests return proposals, never direct writes.
+        -- Reuse the multi-file approval flow to keep user control.
+        local proposals = Multi.parse(response)
+        if #proposals > 0 then
+          return Multi.approve_all(proposals, function(applied, total)
+            vim.notify(string.format("Applied %d of %d Vibe file proposals", applied, total))
+          end)
         end
 
         local items = Qfix.parse(response)
