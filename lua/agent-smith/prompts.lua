@@ -70,18 +70,25 @@ end
 --- Similar to search but for broader analysis operations.
 ---@return string
 function M.vibe()
-  return [[Perform the requested analysis or action on this project.
-Output results as location lines in this exact format (one per line):
+  return [[Perform the requested analysis on this project without directly modifying files.
 
+For analysis requests, output ONLY location lines in this exact format (one per line):
 /path/to/file.ext:line:column,line_count,Brief note about what was found
 
+For requests that create, modify, or delete files, output ONLY complete proposals:
+<FILE_CHANGE>/absolute/path/to/file.ext</FILE_CHANGE>
+<CONTENT>
+complete replacement content for this file
+</CONTENT>
+
 Rules:
+- Never claim a file was changed unless it is represented by a FILE_CHANGE proposal
 - Use absolute paths
-- Line numbers are 1-based
-- Columns are 1-based
-- line_count = number of lines to highlight
-- Notes must be on a single line (no newlines)
-- Do not include any other text, explanations, or markdown]]
+- Location line numbers and columns are 1-based
+- line_count is number of lines to highlight
+- Location notes must be single-line
+- FILE_CHANGE content must be complete file content, never a diff
+- Do not include explanations or markdown fences]]
 end
 
 --- Build the multi-file edit prompt.
