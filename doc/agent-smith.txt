@@ -296,10 +296,11 @@ The AI outputs structured blocks: >text
 <
 
 Approval flow:
-1. Each file change is shown in an approval window
-2. User presses <CR> (approve), q (reject), or Q (reject all)
-3. Approved changes are written to disk
-4. Staleness detection warns if file changed during approval
+1. Each file change opens a "Change Proposal" review window
+2. Header states whether it creates or replaces a file; no change is applied yet
+3. User presses <CR> (apply), q or Esc (skip), or Q (skip all)
+4. Approved changes are written to disk
+5. Staleness detection warns if file changed during approval
 
 Usage: >lua
   -- Via keymap (visual mode)
