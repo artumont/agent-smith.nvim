@@ -10,8 +10,11 @@ local M = {}
 M.__index = M
 
 --- Create inline status anchored to a buffer position.
+---
+--- Set above=true to render before the anchor row; set above=false to render
+--- after it. Visual edits create one of each so feedback brackets selection.
 ---@param label string Status label
----@param opts table { buffer: number, row: number, col?: number }
+---@param opts table { buffer: number, row: number, col?: number, above?: boolean }
 ---@return table status
 function M.new(label, opts)
   opts = opts or {}
@@ -20,6 +23,7 @@ function M.new(label, opts)
     buffer = opts.buffer,
     row = opts.row,
     col = opts.col or 0,
+    above = opts.above ~= false,
     frame = 1,
     running = false,
     extmark = nil,
@@ -35,7 +39,7 @@ function M:_render()
   self.extmark = vim.api.nvim_buf_set_extmark(self.buffer, namespace, row, self.col, {
     id = self.extmark,
     virt_lines = { { { text, "Comment" } } },
-    virt_lines_above = true,
+    virt_lines_above = self.above,
   })
   self.frame = self.frame % #frames + 1
 end
