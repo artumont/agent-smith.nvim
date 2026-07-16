@@ -19,11 +19,35 @@ local M = {}
 ---@param title string Window title
 ---@param opts table { cb: fun(ok: boolean, text: string), content?: string[] }
 function M.capture(title, opts)
+  -- Keep title short like 99. Controls live in a footer inside the prompt
+  -- instead of crowding the border.
   local win, buf = Window.create(
-    string.format(" Agent-Smith %s | <C-Enter>: submit | <Esc>q: cancel ", title),
+    string.format(" Agent-Smith %s ", title),
     opts.content or { "" },
     { enter = true }
   )
+  local config = vim.api.nvim_win_get_config(win)
+  local footer_buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(
+    footer_buf,
+    0,
+    -1,
+    false,
+    { "  <C-Enter>=submit   :w=submit   q=cancel" }
+  )
+  vim.bo[footer_buf].modifiable = false
+  vim.bo[footer_buf].bufhidden = "wipe"
+  local footer_win = vim.api.nvim_open_win(footer_buf, false, {
+    relative = "win",
+    win = win,
+    row = config.height - 1,
+    col = 0,
+    width = config.width,
+    height = 1,
+    style = "minimal",
+    focusable = false,
+  })
+  vim.wo[win].scrolloff = 2
 
   vim.bo[buf].buftype = "acwrite"
   vim.bo[buf].bufhidden = "wipe"
@@ -40,6 +64,9 @@ function M.capture(title, opts)
       text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
     end
 
+    if vim.api.nvim_win_is_valid(footer_win) then
+      vim.api.nvim_win_close(footer_win, true)
+    end
     Window.close(win)
     opts.cb(ok, text)
   end
