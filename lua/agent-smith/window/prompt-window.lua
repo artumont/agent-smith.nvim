@@ -1,81 +1,75 @@
 --- agent-smith/window/prompt-window.lua
 ---
---- Floating window for capturing user prompt input.
+--- Floating prompt input.
 ---
---- Behavior:
---- - Opens a centered floating window
---- - User types instructions
---- - Press :w (write) to submit
---- - Press q to cancel
---- - On submit: BufWriteCmd fires, text is captured, callback called
---- - On cancel: WinClosed fires, callback called with empty string
+--- Prompt buffers use buftype=acwrite so :write can submit text. Neovim
+--- rejects :write on unnamed buffers before BufWriteCmd, so every prompt gets
+--- a unique agent-smith:// buffer name. Do not remove this naming step.
 ---
---- Buffer settings:
---- - buftype = "acwrite": Enables :w to trigger BufWriteCmd
---- - bufhidden = "wipe": Buffer is deleted when window closes
---- - swapfile = false: No swap file for prompt buffers
----
---- Integration with completions:
---- When the prompt window opens, it calls setup_buffer() on the
---- extensions module. This initializes buffer-local completion
---- sources for #rule and @file autocomplete.
----
---- Keymaps:
---- Default keymaps in prompt buffer:
---- - :w -> submit (triggers BufWriteCmd)
---- - q -> cancel (closes window, calls callback with "")
+--- Submit keys:
+--- - Insert mode: Ctrl-Enter or Ctrl-S
+--- - Normal mode: Enter or :write
+--- - Cancel: Escape, then q
 
 local Window = require("agent-smith.window")
 
 local M = {}
 
---- Open a prompt capture window.
----
----@param title string Window title (e.g., "Visual", "Search")
----@param opts table Options:
----   - cb: function(ok: boolean, text: string) Callback
----   - content?: string[] Initial buffer content
----@return nil
+--- Open a prompt input window.
+---@param title string Window title
+---@param opts table { cb: fun(ok: boolean, text: string), content?: string[] }
 function M.capture(title, opts)
   local win, buf = Window.create(
-    " Agent-Smith " .. title .. " ",
+    string.format(" Agent-Smith %s | <C-Enter>: submit | <Esc>q: cancel ", title),
     opts.content or { "" },
     { enter = true }
   )
 
-  -- Configure buffer for prompt input
   vim.bo[buf].buftype = "acwrite"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
+  vim.api.nvim_buf_set_name(buf, string.format("agent-smith://prompt/%d", buf))
 
-  -- Initialize completion extensions for this buffer
+  local completed = false
+  local function finish(ok)
+    if completed then return end
+    completed = true
+
+    local text = ""
+    if ok and vim.api.nvim_buf_is_valid(buf) then
+      text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
+    end
+
+    Window.close(win)
+    opts.cb(ok, text)
+  end
+
   local state = require("agent-smith").__get_state()
   if state then
     require("agent-smith.extensions").setup_buffer(state)
   end
 
-  -- Cancel on q
-  vim.keymap.set("n", "q", function()
-    Window.close(win)
-    opts.cb(false, "")
-  end, { buffer = buf })
+  -- Reliable submit paths. :write is retained for users who prefer it.
+  vim.keymap.set("n", "<CR>", function() finish(true) end, { buffer = buf, desc = "Submit prompt" })
+  vim.keymap.set("i", "<C-CR>", function() finish(true) end, { buffer = buf, desc = "Submit prompt" })
+  vim.keymap.set("i", "<C-s>", function() finish(true) end, { buffer = buf, desc = "Submit prompt" })
+  vim.keymap.set("n", "q", function() finish(false) end, { buffer = buf, desc = "Cancel prompt" })
 
-  -- Submit on :w (BufWriteCmd)
   vim.api.nvim_create_autocmd("BufWriteCmd", {
     buffer = buf,
-    once = true,
-    callback = function()
-      local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
-      local text = table.concat(lines, "\n")
-      Window.close(win)
-      opts.cb(true, text)
-    end,
+    callback = function() finish(true) end,
   })
 
-  -- Call on_load if provided (for setting up completion, etc.)
-  if opts.on_load then
-    opts.on_load(buf)
-  end
+  vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(win),
+    once = true,
+    callback = function() finish(false) end,
+  })
+
+  if opts.on_load then opts.on_load(buf) end
+  vim.schedule(function()
+    if vim.api.nvim_win_is_valid(win) then vim.cmd("startinsert") end
+  end)
 end
 
 return M

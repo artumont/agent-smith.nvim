@@ -223,8 +223,11 @@ Custom keymaps: >lua
 <
 
 Prompt window keymaps (while typing instructions):
-  :w        Submit prompt
-  q         Cancel
+  CTRL-Enter Submit prompt from Insert mode
+  CTRL-S     Submit prompt from Insert mode
+  Esc Enter  Submit prompt from Normal mode
+  :write     Submit prompt
+  Esc q      Cancel
 
 Multi-file approval window keymaps:
   <CR>      Approve this file change
@@ -453,7 +456,7 @@ Request lifecycle:                                 *agent-smith-lifecycle*
 
   1. User invokes operation (visual/search/vibe)
   2. Prompt window opens for instructions
-  3. User types, presses :w to submit
+  3. User types, presses Ctrl-Enter or :write to submit
   4. Context assembled:
      - AGENTS.md files from directory hierarchy
      - Operation-specific system prompt
