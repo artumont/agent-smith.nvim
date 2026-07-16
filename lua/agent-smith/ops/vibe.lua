@@ -22,6 +22,27 @@ local Qfix = require("agent-smith.ops.qfix-helpers")
 
 local M = {}
 
+--- Configure the Quickfix window opened for Vibe results.
+---
+--- Vibe returns code locations, not multi-file approval proposals. The normal
+--- Quickfix list keeps standard location navigation while this header explains
+--- what is being displayed and makes closing it discoverable.
+local function configure_results_window()
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    local buf = vim.api.nvim_win_get_buf(win)
+    if vim.bo[buf].buftype == "quickfix" then
+      vim.wo[win].winbar = " Agent-Smith Vibe Results | <CR> open location | q close "
+      vim.keymap.set("n", "q", function()
+        if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
+      end, { buffer = buf, nowait = true, desc = "Close Agent-Smith Vibe results" })
+      vim.keymap.set("n", "<Esc>", function()
+        if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
+      end, { buffer = buf, nowait = true, desc = "Close Agent-Smith Vibe results" })
+      return
+    end
+  end
+end
+
 --- Run the vibe operation.
 ---
 ---@param state table Plugin state
@@ -48,6 +69,7 @@ function M.run(state, opts)
             items = items,
           })
           vim.cmd("copen")
+          configure_results_window()
         else
           vim.notify("Vibe completed without locations")
         end
