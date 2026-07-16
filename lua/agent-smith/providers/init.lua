@@ -62,16 +62,16 @@ end
 
 --- Retrieve the AI's response from the temp file.
 ---
---- Called after the provider process exits successfully.
---- Reads the entire file and returns it as a string.
+--- Read a response written to the optional temp file.
 ---
+--- Most supported CLIs print their response to stdout. This fallback exists
+--- for providers configured to write a response file instead.
 ---@param context table The Prompt object (has tmp_file field)
----@return boolean success Whether the read succeeded
----@return string response The file contents (or empty string on failure)
+---@return string|nil response File contents, or nil when no file exists
 function BaseProvider:_retrieve_response(context)
   local ok, result = pcall(vim.fn.readfile, context.tmp_file)
-  if not ok then return false, "" end
-  return true, table.concat(result, "\n")
+  if not ok then return nil end
+  return table.concat(result, "\n")
 end
 
 --- Execute the provider CLI and handle the async response.
@@ -99,6 +99,10 @@ function BaseProvider:make_request(query, context, observer)
     vim.list_extend(command, extra_args)
   end
 
+  -- CLI providers normally print the final answer to stdout. Keep every
+  -- chunk because vim.system() may stream one response across callbacks.
+  local stdout = {}
+  local stderr = {}
   local proc = vim.system(
     command,
     {
@@ -109,6 +113,7 @@ function BaseProvider:make_request(query, context, observer)
           return
         end
         if not err and data then
+          table.insert(stdout, data)
           observer.on_stdout(data)
         end
       end),
@@ -118,6 +123,7 @@ function BaseProvider:make_request(query, context, observer)
           return
         end
         if not err and data then
+          table.insert(stderr, data)
           observer.on_stderr(data)
         end
       end),
@@ -127,19 +133,20 @@ function BaseProvider:make_request(query, context, observer)
         once_complete("cancelled", "")
         return
       end
+
       if obj.code ~= 0 then
+        local details = vim.trim(table.concat(stderr, ""))
         local error_text = string.format("Provider exit code: %d", obj.code)
+        if details ~= "" then error_text = error_text .. "\n" .. details end
         once_complete("failed", error_text)
-      else
-        vim.schedule(function()
-          local ok, res = self:_retrieve_response(context)
-          if ok then
-            once_complete("success", res)
-          else
-            once_complete("failed", "Failed to read response from temp file")
-          end
-        end)
+        return
       end
+
+      local response = table.concat(stdout, "")
+      if vim.trim(response) == "" then
+        response = self:_retrieve_response(context) or ""
+      end
+      once_complete("success", response)
     end)
   )
 
