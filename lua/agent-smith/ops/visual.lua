@@ -44,6 +44,7 @@
 local Prompt = require("agent-smith.prompt")
 local Imports = require("agent-smith.imports.detector")
 local Multi = require("agent-smith.ops.multi-file")
+local Response = require("agent-smith.ops.response")
 
 local M = {}
 
@@ -129,6 +130,10 @@ function M.run(state, opts)
               vim.log.levels.WARN
             )
           end
+
+          -- Models sometimes ignore the code-only rule and emit ```lua fences.
+          -- Remove a complete outer fence before import detection or replacement.
+          response = Response.unwrap_code_fence(response)
 
           -- Extract imports and code body
           local ft = vim.bo[context.buffer].filetype
