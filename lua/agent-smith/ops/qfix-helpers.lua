@@ -33,13 +33,17 @@ function M.parse(text)
       "^(.-):(%d+):(%d+),(%d+),(.+)$"
     )
 
-    if file and vim.fn.filereadable(file) == 1 then
+    if file then
+      -- Quickfix accepts paths that do not exist yet. Keep those results so a
+      -- valid provider response is never reported as "without locations".
+      -- This matters for proposed new files returned by agentic workflows.
+      local missing = vim.fn.filereadable(file) ~= 1
       table.insert(items, {
         filename = file,
         lnum = tonumber(lnum),
         col = tonumber(col),
         end_lnum = tonumber(lnum) + tonumber(count) - 1,
-        text = note,
+        text = (missing and "[missing file] " or "") .. note,
       })
     end
   end
