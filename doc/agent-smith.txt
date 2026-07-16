@@ -98,7 +98,7 @@ Call setup() once during plugin initialization: >lua
     },
     md_files = { "AGENTS.md" },
     -- Must be absolute and outside project. Provider must allow this path.
-    tmp_dir = "/tmp/agent-smith",
+    tmp_dir = "/tmp/nvim/agent-smith",
     default_keymaps = true,
   })
 <
