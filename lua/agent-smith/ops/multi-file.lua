@@ -50,6 +50,12 @@ local Approval = require("agent-smith.window.approval-window")
 
 local M = {}
 
+local function is_absolute(path)
+  return path:sub(1, 1) == "/"
+    or path:match("^%a:[/\\\\]") ~= nil
+    or path:sub(1, 2) == "\\\\"
+end
+
 --- Parse multi-file changes from AI response text.
 ---
 --- Extracts <FILE_CHANGE>...</FILE_CHANGE><CONTENT>...</CONTENT> blocks.
@@ -63,7 +69,7 @@ function M.parse(text)
   for path, content in text:gmatch(
     "<FILE_CHANGE>%s*(.-)%s*</FILE_CHANGE>%s*<CONTENT>%s*(.-)%s*</CONTENT>"
   ) do
-    if vim.fs.isabspath(path) and content ~= "" then
+    if is_absolute(path) and content ~= "" then
       -- Snapshot current file content for staleness detection
       local ok, lines = pcall(vim.fn.readfile, path)
       table.insert(changes, {
