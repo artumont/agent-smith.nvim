@@ -2,8 +2,6 @@
 ---
 --- Lightweight lualine-compatible status component for active requests.
 
-local UI = require("agent-smith.ui")
-
 local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 local active = {}
 local frame = 1
@@ -50,20 +48,10 @@ end
 
 --- Return status text for a lualine component.
 ---@return string
-local function gradient_text(text)
-  local chunks = {}
-  for index = 1, #text do
-    local group = UI.gradient_group(frame + index - 1)
-    table.insert(chunks, "%#" .. group .. "#" .. text:sub(index, index))
-  end
-  return table.concat(chunks) .. "%*"
-end
-
 function M.component()
   local _, label = next(active)
   if not label then return "" end
-  local text = string.format("%s %s", frames[frame], label)
-  return UI.enabled() and gradient_text(text) or text
+  return string.format("%s %s", frames[frame], label)
 end
 
 --- Return whether any Agent-Smith request has a statusline indicator.
