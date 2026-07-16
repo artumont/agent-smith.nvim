@@ -7,7 +7,7 @@
 --- a unique agent-smith:// buffer name. Do not remove this naming step.
 ---
 --- Submit and cancel keys are shown in the window's bottom border.
---- :write submits. Escape closes without submitting.
+--- :write submits. Escape closes only from Normal mode.
 
 local Window = require("agent-smith.window")
 
@@ -26,7 +26,7 @@ function M.capture(title, opts)
   )
   local parent = vim.api.nvim_win_get_config(win)
   local legend_buf = vim.api.nvim_create_buf(false, true)
-  local legend = " :w to submit ---- esc to close "
+  local legend = " :w to submit   esc to close "
   vim.api.nvim_buf_set_lines(legend_buf, 0, -1, false, { legend })
   vim.bo[legend_buf].buftype = "nofile"
   vim.bo[legend_buf].bufhidden = "wipe"
@@ -46,8 +46,8 @@ function M.capture(title, opts)
     end_col = 3,
     hl_group = "WarningMsg",
   })
-  vim.api.nvim_buf_set_extmark(legend_buf, legend_ns, 0, 17, {
-    end_col = 20,
+  vim.api.nvim_buf_set_extmark(legend_buf, legend_ns, 0, 16, {
+    end_col = 19,
     hl_group = "WarningMsg",
   })
   vim.wo[win].scrolloff = 3
@@ -79,7 +79,8 @@ function M.capture(title, opts)
     require("agent-smith.extensions").setup_buffer(state)
   end
 
-  vim.keymap.set("i", "<Esc>", function() finish(false) end, { buffer = buf, desc = "Close prompt" })
+  -- Insert-mode Esc keeps normal Neovim behavior: leave Insert mode.
+  -- Press Esc again from Normal mode to close without submitting.
   vim.keymap.set("n", "<Esc>", function() finish(false) end, { buffer = buf, desc = "Close prompt" })
   vim.keymap.set("n", "q", function() finish(false) end, { buffer = buf, desc = "Close prompt" })
 
