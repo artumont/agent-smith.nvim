@@ -49,12 +49,26 @@ function M.stop(context)
   redraw()
 end
 
+local function gradient_text(text)
+  local chunks = {}
+  local char_count = vim.fn.strchars(text)
+  for index = 0, char_count - 1 do
+    table.insert(chunks, string.format(
+      "%%#%s#%s",
+      UI.gradient_group(frame - index),
+      vim.fn.strcharpart(text, index, 1)
+    ))
+  end
+  return table.concat(chunks) .. "%*"
+end
+
 --- Return status text for a lualine component.
 ---@return string
 function M.component()
   local _, label = next(active)
   if not label then return "" end
-  return string.format("%s %s", frames[frame], label)
+  local text = string.format("%s %s", frames[frame], label)
+  return UI.enabled() and gradient_text(text) or text
 end
 
 --- Return current optional accent color for statusline integrations.

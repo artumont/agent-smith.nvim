@@ -45,7 +45,7 @@ function M:_render()
     for index = 0, char_count - 1 do
       table.insert(chunks, {
         vim.fn.strcharpart(text, index, 1),
-        UI.gradient_group(self.frame + index),
+        UI.gradient_group(self.frame - index),
       })
     end
   else
