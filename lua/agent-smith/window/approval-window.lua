@@ -30,7 +30,8 @@ local function diff_lines(change)
   if not ok then return nil end
 
   local from = change.snapshot == nil and "/dev/null" or change.path
-  local lines = { "--- " .. from, "+++ " .. change.path }
+  local to = change.delete and "/dev/null" or change.path
+  local lines = { "--- " .. from, "+++ " .. to }
   if diff == "" then
     table.insert(lines, "No textual changes proposed.")
   else
@@ -40,16 +41,16 @@ local function diff_lines(change)
 end
 
 local function content_lines(change)
+  if change.delete then return { "(file will be deleted)" } end
   return vim.split(change.content, "\n", { plain = true })
 end
 
-local function apply_highlights(buf, lines, first_content_row, is_new, mode)
+local function apply_highlights(buf, lines, first_content_row, action, is_new, mode)
   vim.api.nvim_buf_clear_namespace(buf, namespace, 0, -1)
   vim.api.nvim_buf_add_highlight(buf, namespace, "Comment", 0, 0, -1)
   for _, key in ipairs({ "<CR>", "Tab", "q", "Q", "Esc" }) do
     highlight_literal(buf, 0, lines[1], key, "Special")
   end
-  local action = is_new and "Create new file" or "Replace existing file"
   highlight_literal(buf, 2, lines[3], action, is_new and "String" or "WarningMsg")
   vim.api.nvim_buf_add_highlight(buf, namespace, "Directory", 2, #action + 2, -1)
   vim.api.nvim_buf_add_highlight(buf, namespace, "Title", 4, 0, -1)
@@ -78,7 +79,8 @@ end
 ---@param cb function Callback: "approve" | "reject" | "reject_all"
 function M.approve(change, cb)
   local is_new = change.snapshot == nil
-  local action = is_new and "Create new file" or "Replace existing file"
+  local action = change.delete and "Delete existing file"
+    or (is_new and "Create new file" or "Replace existing file")
   local mode = "diff"
   local width, height = ui_size()
   local win, buf = Window.create("", {}, {
@@ -119,7 +121,7 @@ function M.approve(change, cb)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     vim.bo[buf].modifiable = false
     vim.bo[buf].readonly = true
-    apply_highlights(buf, lines, 7, is_new, mode)
+    apply_highlights(buf, lines, 7, action, is_new, mode)
     vim.api.nvim_win_set_cursor(win, { math.min(8, #lines), 0 })
   end
 
