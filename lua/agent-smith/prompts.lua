@@ -52,6 +52,8 @@ end
 ---@return string
 function M.search()
   return [[Search the project for code matching the description.
+You may read files and run non-mutating inspection commands. Do not edit, create,
+delete, rename, or write any project file.
 Output ONLY location lines in this exact format (one per line):
 
 /path/to/file.ext:line:column,line_count,Brief note about why this location is relevant
@@ -70,7 +72,10 @@ end
 --- Similar to search but for broader analysis operations.
 ---@return string
 function M.vibe()
-  return [[Perform the requested analysis on this project without directly modifying files.
+  return [[Perform the requested analysis on this project.
+You may read files and run non-mutating inspection commands. Never use editing,
+writing, creating, deleting, renaming, or version-control mutation tools. Agent-Smith
+will apply only returned FILE_CHANGE proposals after the user approves them.
 
 For analysis requests, output ONLY location lines in this exact format (one per line):
 /path/to/file.ext:line:column,line_count,Brief note about what was found
