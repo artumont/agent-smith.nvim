@@ -187,6 +187,7 @@ All operations are accessed via Lua functions: >lua
   *:AgentSmithVibe*       |smith.vibe()|
   Open-ended analysis into quickfix list.
   Uses OpenCode's read-only `compaction` agent for Vibe and Search.
+  File-change requests return per-file approval proposals; Vibe never writes directly.
   Result header: <CR> opens location; q or Esc closes results.
 
   *:AgentSmithTutorial*   |smith.tutorial()|
