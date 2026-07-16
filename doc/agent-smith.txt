@@ -297,10 +297,11 @@ The AI outputs structured blocks: >text
 
 Approval flow:
 1. Each file change opens a "Change Proposal" review window
-2. Neogit-inspired panel highlights action, path, content, and controls; no change is applied yet
-3. User presses <CR> (apply), q or Esc (skip), or Q (skip all)
-4. Approved changes are written to disk
-5. Staleness detection warns if file changed during approval
+2. Neogit-inspired panel opens with unified diff and unchanged context; no change is applied yet
+3. User presses Tab to toggle unified diff and full proposed file content
+4. User presses <CR> (apply), q or Esc (skip), or Q (skip all)
+5. Approved changes are written to disk
+6. Staleness detection warns if file changed during approval
 
 Usage: >lua
   -- Via keymap (visual mode)
