@@ -222,7 +222,7 @@ Custom keymaps: >lua
   end)
 <
 
-Prompt window keymaps (shown in bottom border):
+Prompt window keymaps (shown at the bottom of the prompt):
   :write     Submit prompt
   Esc        Close prompt without submitting
 
