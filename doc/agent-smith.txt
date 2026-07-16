@@ -501,11 +501,23 @@ Single State singleton holds:
 
 "Request failed":                                *agent-smith-error-request*
 
+  Failure notifications include a diagnostic block containing:
+  - Cause and provider name
+  - Configured model
+  - Executable availability
+  - Working directory
+  - Whether the prompt argument reached the command
+  - Exit code and signal
+  - Provider stderr
+
+  Prompt text is always redacted from diagnostics.
+
   Check:
   1. Provider CLI is installed and in PATH
   2. Provider CLI is authenticated (if required)
-  3. Network connection (if using cloud providers)
-  4. View logs: smith.view_logs()
+  3. Configured model exists in the provider model list
+  4. Network connection (if using cloud providers)
+  5. Read stderr in the failure notification
 
 Empty quickfix list:                         *agent-smith-error-quickfix*
 
