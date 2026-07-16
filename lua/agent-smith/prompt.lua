@@ -145,7 +145,7 @@ end
 --- (e.g., a symlink), the walk stops at the git root. Files above
 --- the root won't be discovered.
 function M:_read_md_files()
-	local root = vim.fs.root(self.full_path, ".git") or vim.fn.getcwd()
+	local root = self.cwd or vim.fs.root(self.full_path, ".git") or vim.fn.getcwd()
 	local dir = vim.fs.dirname(self.full_path)
 
 	while dir and dir:sub(1, #root) == root do
@@ -176,9 +176,12 @@ function M:start(user_prompt, observer)
 	self.state = "requesting"
 	self._state.tracking:track(self)
 
-	-- Build operation-specific instruction
-	local instruction
-	if self.operation == "visual" then
+	-- Build operation-specific instruction. Multi-phase workflows may supply
+	-- an explicit contract through context.instruction.
+	local instruction = self.instruction
+	if instruction then
+		-- Keep the supplied phase-specific contract.
+	elseif self.operation == "visual" then
 		instruction = Prompts.visual(self.range)
 	elseif self.operation == "search" then
 		instruction = Prompts.search()
@@ -188,7 +191,7 @@ function M:start(user_prompt, observer)
 
 	-- Assemble context pieces
 	self:add_prompt_content(Prompts.wrap(instruction, user_prompt))
-	self:add_prompt_content("<FILE>" .. self.full_path .. "</FILE>")
+	self:add_prompt_content("<FILE>" .. (self.file_reference or self.full_path) .. "</FILE>")
 
 	-- Resolve #rules and @files from the user prompt
 	self:add_references(require("agent-smith.extensions.completions").parse(user_prompt))

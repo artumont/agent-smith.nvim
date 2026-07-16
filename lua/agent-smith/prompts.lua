@@ -96,6 +96,56 @@ Rules:
 - Do not include explanations or markdown fences]]
 end
 
+--- Build the first, planning phase of a sandboxed Vibe session.
+---@return string
+function M.vibe_plan()
+  return [[Inspect this sandboxed project and create a plan. Do not modify files yet.
+
+Return ONLY this structure:
+<PLAN>
+<EDIT_FILES>
+<FILE>repo/relative/path.ext</FILE>
+</EDIT_FILES>
+<STEPS>
+Concise ordered implementation steps
+</STEPS>
+</PLAN>
+
+Rules:
+- Paths must be relative to the sandbox project root
+- EDIT_FILES must contain every file that execution may create, modify, or delete
+- Use an empty EDIT_FILES block for analysis-only requests
+- Read all files needed to make a reliable plan
+- Do not edit, create, delete, rename, or write files during this phase
+- Do not include markdown fences or text outside PLAN]]
+end
+
+--- Build the execution phase of a sandboxed Vibe session.
+---@param plan string Approved plan text
+---@param files string[] Approved editable relative paths
+---@return string
+function M.vibe_execute(plan, files)
+  local file_lines = {}
+  for _, path in ipairs(files) do table.insert(file_lines, "- " .. path) end
+  local scope = #file_lines > 0 and table.concat(file_lines, "\n") or "(analysis only; no file writes allowed)"
+  return string.format([[Execute the approved plan inside this sandbox project.
+
+Approved editable files:
+%s
+
+Approved plan:
+%s
+
+Rules:
+- Work only inside the current sandbox directory
+- Modify only approved editable files
+- Do not access or modify the original repository
+- For analysis-only plans, do not write files and return location lines as:
+  /absolute/sandbox/path:line:column,line_count,Brief note
+- For editing plans, use tools to edit sandbox files directly
+- When complete, return a concise plain-text summary]], scope, plan)
+end
+
 --- Build the multi-file edit prompt.
 ---
 --- Instructs the AI to use FILE_CHANGE/CONTENT blocks.
