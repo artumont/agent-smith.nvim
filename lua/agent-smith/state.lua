@@ -38,9 +38,28 @@
 --- in the main thread or via vim.schedule() callbacks.
 
 local Tracking = require("agent-smith.tracking")
+local Utils = require("agent-smith.utils")
 
 local M = {}
 M.__index = M
+
+local function choice_file()
+  return Utils.named_tmp_file(nil, "first-run-choice")
+end
+
+--- Read the persisted first-run choice.
+---@return string|nil choice "red" | "blue" | nil
+function M.read_choice()
+  local content = Utils.read_file(choice_file())
+  if content == "red" or content == "blue" then return content end
+  return nil
+end
+
+--- Persist the first-run choice.
+---@param choice string "red" | "blue"
+function M.write_choice(choice)
+  Utils.write_file(choice_file(), choice)
+end
 
 --- Discover SKILL.md files in configured directories.
 ---
@@ -88,7 +107,11 @@ function M.new(opts)
     display_errors = opts.display_errors or false,
     tmp_dir_path = opts.tmp_dir,
     rules = {},
+    matrix_mode = false,
   }, M)
+
+  local choice = M.read_choice()
+  if choice == "red" then self.matrix_mode = true end
 
   self:refresh_rules()
   return self

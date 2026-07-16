@@ -106,7 +106,10 @@ local function execute_plan(state, session, user, plan)
 
       Multi.approve_all(proposals, function(applied, total)
         Session.cleanup(session)
-        vim.notify(string.format("Applied %d of %d sandboxed Vibe changes", applied, total))
+        local smith = require("agent-smith")
+        local msg = smith.quote("vibe")
+          or string.format("Applied %d of %d sandboxed Vibe changes", applied, total)
+        vim.notify(msg)
       end)
     end,
   })

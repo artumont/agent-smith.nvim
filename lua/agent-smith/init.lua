@@ -38,6 +38,33 @@ local Statusline = require("agent-smith.statusline")
 local M = {}
 local state = nil -- Module-local singleton. One instance per Neovim session.
 
+local matrix_quotes = {
+  red = {
+    setup    = "I know kung fu.",
+    visual   = "Free your mind.",
+    search   = "I can show you the code...",
+    vibe     = "I'm going to show them a world without rules.",
+    cancel   = "It is not this day.",
+    tutorial = "There is no spoon.",
+    success  = "Whoa.",
+  },
+  blue = {
+    setup    = "Agent-Smith is ready.",
+    visual   = "Edit applied.",
+    search   = "Results in quickfix.",
+    vibe     = "Vibe completed.",
+    cancel   = "Requests cancelled.",
+    tutorial = "Tutorial generated.",
+    success  = "Done.",
+  },
+}
+
+local function matrix_quote(kind)
+  if not state or not state.matrix_mode then return nil end
+  local set = matrix_quotes.red[kind] and matrix_quotes.red or matrix_quotes.blue
+  return set[kind]
+end
+
 --- Available AI provider backends.
 --- Each implements the BaseProvider interface from providers/init.lua.
 ---
@@ -116,6 +143,29 @@ function M.setup(opts)
 			M.stop_all_requests()
 		end,
 	})
+
+	-- First-run: red pill or blue pill
+	local choice = State.read_choice()
+	if not choice then
+		vim.ui.select({ "red pill", "blue pill" }, {
+			prompt = "Agent-Smith",
+			format_item = function(item)
+				if item == "red pill" then
+					return "Take the red pill \u{2014} show me the matrix"
+				else
+					return "Take the blue pill \u{2014} keep me comfortable"
+				end
+			end,
+		}, function(selection)
+			if not selection then selection = "blue pill" end
+			local chosen = selection == "red pill" and "red" or "blue"
+			State.write_choice(chosen)
+			state.matrix_mode = chosen == "red"
+			if state.matrix_mode then
+				vim.schedule(function() vim.notify(matrix_quote("setup")) end)
+			end
+		end)
+	end
 
 	return M
 end
@@ -208,7 +258,7 @@ end
 function M.stop_all_requests()
 	if state then
 		state.tracking:stop_all_requests()
-		vim.notify("Agent-Smith requests cancelled")
+		vim.notify(matrix_quote("cancel") or "Agent-Smith requests cancelled")
 	end
 end
 
@@ -305,6 +355,20 @@ function M.info()
 			configured().tracking:completed()
 		)
 	)
+end
+
+--- Return whether matrix mode is active.
+---@return boolean
+function M.matrix_mode()
+	return state and state.matrix_mode or false
+end
+
+--- Return a matrix-themed quote for the given context, or nil.
+--- For use by other modules that want themed notifications.
+---@param kind string "visual" | "search" | "vibe" | "cancel" | "tutorial" | "success"
+---@return string|nil
+function M.quote(kind)
+	return matrix_quote(kind)
 end
 
 --- Internal: get state singleton (for testing/extensions).
