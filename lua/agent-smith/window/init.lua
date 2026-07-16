@@ -57,8 +57,6 @@ local function centered_config(title, opts)
     border = "rounded",
     title = title,
     title_pos = "center",
-    footer = opts.footer,
-    footer_pos = opts.footer and (opts.footer_pos or "center") or nil,
     width = width,
     height = height,
     row = math.floor((ui_h - height) / 2),
@@ -70,7 +68,7 @@ end
 ---
 ---@param title string Window title
 ---@param lines? string[] Initial buffer lines
----@param opts? table Options: { enter: boolean, width: number, height: number, footer: string, footer_pos: string }
+---@param opts? table Options: { enter: boolean, width: number, height: number }
 ---@return number win Window handle
 ---@return number buf Buffer handle
 function M.create(title, lines, opts)
