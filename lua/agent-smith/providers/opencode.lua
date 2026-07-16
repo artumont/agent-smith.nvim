@@ -8,7 +8,10 @@ function P:_build_command(query, context)
   -- build can read project files, unlike OpenCode's compaction agent. Prompt
   -- contracts prohibit writes; Agent-Smith applies returned proposals only
   -- after explicit user approval.
-  return { "opencode", "run", "--agent", "build", "-m", context.model, query }
+  local command = { "opencode", "run", "--agent", "build", "-m", context.model }
+  if context.cwd then vim.list_extend(command, { "--dir", context.cwd }) end
+  table.insert(command, query)
+  return command
 end
 function P:fetch_models(cb)
   vim.system({ "opencode", "models" }, { text = true }, function(r)

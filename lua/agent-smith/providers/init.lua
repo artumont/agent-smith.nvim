@@ -108,7 +108,7 @@ local function failure_diagnostic(context, command, reason, result, stderr)
       executable,
       vim.fn.executable(executable) == 1 and "found" or "not found in PATH"
     ),
-    "Working directory: " .. vim.fn.getcwd(),
+    "Working directory: " .. tostring(context.cwd or vim.fn.getcwd()),
     "Prompt argument: " .. (prompt_present and "present" or "MISSING"),
     "Argument count: " .. tostring(#command),
   }
@@ -165,6 +165,7 @@ function BaseProvider:make_request(query, context, observer)
     command,
     {
       text = true,
+      cwd = context.cwd,
       stdout = vim.schedule_wrap(function(err, data)
         if context:is_cancelled() then
           once_complete("cancelled", "")
