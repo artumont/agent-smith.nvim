@@ -105,7 +105,7 @@ end
 ---
 ---@return string dir Absolute path to temp directory
 function M:tmp_dir()
-  return self.tmp_dir_path or vim.fn.stdpath("cache") .. "/agent-smith"
+  return self.tmp_dir_path or "/tmp/nvim/agent-smith"
 end
 
 --- Get the active provider (override or default).
