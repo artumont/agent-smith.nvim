@@ -224,7 +224,7 @@ Custom keymaps: >lua
 
 Prompt window keymaps (shown at the bottom of the prompt):
   :write     Submit prompt
-  Esc        Close prompt without submitting
+  Esc        Close prompt from Normal mode without submitting
 
 Multi-file approval window keymaps:
   <CR>      Approve this file change
