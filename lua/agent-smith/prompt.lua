@@ -59,6 +59,9 @@ function M.new(state, operation)
 		xid = id(),
 		operation = operation,
 		state = "ready",
+		-- Provider commands read the request-scoped model. Without this field,
+		-- nil truncates command arrays at the model flag and drops the prompt.
+		model = state.model,
 		user_prompt = "",
 		full_path = vim.api.nvim_buf_get_name(0),
 		started_at = vim.uv.hrtime(),
