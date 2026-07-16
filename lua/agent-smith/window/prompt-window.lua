@@ -6,10 +6,8 @@
 --- rejects :write on unnamed buffers before BufWriteCmd, so every prompt gets
 --- a unique agent-smith:// buffer name. Do not remove this naming step.
 ---
---- Submit keys:
---- - Insert mode: Ctrl-Enter or Ctrl-S
---- - Normal mode: Enter or :write
---- - Cancel: Escape, then q
+--- Submit and cancel keys are shown in the window's bottom border.
+--- :write submits. Escape closes without submitting.
 
 local Window = require("agent-smith.window")
 
@@ -19,35 +17,16 @@ local M = {}
 ---@param title string Window title
 ---@param opts table { cb: fun(ok: boolean, text: string), content?: string[] }
 function M.capture(title, opts)
-  -- Keep title short like 99. Controls live in a footer inside the prompt
-  -- instead of crowding the border.
+  -- Match 99's centered input box: clean title and controls in bottom border.
   local win, buf = Window.create(
     string.format(" Agent-Smith %s ", title),
     opts.content or { "" },
-    { enter = true }
+    {
+      enter = true,
+      footer = " :w to submit ---- esc to close ",
+    }
   )
-  local config = vim.api.nvim_win_get_config(win)
-  local footer_buf = vim.api.nvim_create_buf(false, true)
-  vim.api.nvim_buf_set_lines(
-    footer_buf,
-    0,
-    -1,
-    false,
-    { "  <C-Enter>=submit   :w=submit   q=cancel" }
-  )
-  vim.bo[footer_buf].modifiable = false
-  vim.bo[footer_buf].bufhidden = "wipe"
-  local footer_win = vim.api.nvim_open_win(footer_buf, false, {
-    relative = "win",
-    win = win,
-    row = config.height - 1,
-    col = 0,
-    width = config.width,
-    height = 1,
-    style = "minimal",
-    focusable = false,
-  })
-  vim.wo[win].scrolloff = 2
+  vim.wo[win].scrolloff = 1
 
   vim.bo[buf].buftype = "acwrite"
   vim.bo[buf].bufhidden = "wipe"
@@ -64,9 +43,6 @@ function M.capture(title, opts)
       text = table.concat(vim.api.nvim_buf_get_lines(buf, 0, -1, false), "\n")
     end
 
-    if vim.api.nvim_win_is_valid(footer_win) then
-      vim.api.nvim_win_close(footer_win, true)
-    end
     Window.close(win)
     opts.cb(ok, text)
   end
@@ -76,11 +52,9 @@ function M.capture(title, opts)
     require("agent-smith.extensions").setup_buffer(state)
   end
 
-  -- Reliable submit paths. :write is retained for users who prefer it.
-  vim.keymap.set("n", "<CR>", function() finish(true) end, { buffer = buf, desc = "Submit prompt" })
-  vim.keymap.set("i", "<C-CR>", function() finish(true) end, { buffer = buf, desc = "Submit prompt" })
-  vim.keymap.set("i", "<C-s>", function() finish(true) end, { buffer = buf, desc = "Submit prompt" })
-  vim.keymap.set("n", "q", function() finish(false) end, { buffer = buf, desc = "Cancel prompt" })
+  vim.keymap.set("i", "<Esc>", function() finish(false) end, { buffer = buf, desc = "Close prompt" })
+  vim.keymap.set("n", "<Esc>", function() finish(false) end, { buffer = buf, desc = "Close prompt" })
+  vim.keymap.set("n", "q", function() finish(false) end, { buffer = buf, desc = "Close prompt" })
 
   vim.api.nvim_create_autocmd("BufWriteCmd", {
     buffer = buf,

@@ -45,19 +45,20 @@ end
 
 --- Create a centered window config.
 ---@param title string Window title
----@param width? number Window width (default: 70% of UI)
----@param height? number Window height (default: 40% of UI)
+---@param opts table Window options
 ---@return table config nvim_open_win config
-local function centered_config(title, width, height)
+local function centered_config(title, opts)
   local ui_w, ui_h = get_ui_dimensions()
-  width = width or math.floor(ui_w * 0.7)
-  height = height or math.floor(ui_h * 0.4)
+  local width = opts.width or math.floor(ui_w * 0.7)
+  local height = opts.height or math.floor(ui_h * 0.4)
   return {
     relative = "editor",
     style = "minimal",
     border = "rounded",
     title = title,
     title_pos = "center",
+    footer = opts.footer,
+    footer_pos = opts.footer and (opts.footer_pos or "center") or nil,
     width = width,
     height = height,
     row = math.floor((ui_h - height) / 2),
@@ -69,7 +70,7 @@ end
 ---
 ---@param title string Window title
 ---@param lines? string[] Initial buffer lines
----@param opts? table Options: { enter: boolean, width: number, height: number }
+---@param opts? table Options: { enter: boolean, width: number, height: number, footer: string, footer_pos: string }
 ---@return number win Window handle
 ---@return number buf Buffer handle
 function M.create(title, lines, opts)
@@ -79,7 +80,7 @@ function M.create(title, lines, opts)
   local win = vim.api.nvim_open_win(
     buf,
     opts.enter ~= false,
-    centered_config(title, opts.width, opts.height)
+    centered_config(title, opts)
   )
   table.insert(M.active_windows, { win = win, buf = buf })
   return win, buf
