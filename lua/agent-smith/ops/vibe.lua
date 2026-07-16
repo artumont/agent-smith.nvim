@@ -32,8 +32,11 @@ function M.run(state, opts)
 
   local function send(user)
     local context = Prompt.new(state, "vibe")
+    local Statusline = require("agent-smith.statusline")
+    Statusline.start(context, "Vibing")
     context:start(user, {
       on_complete = function(status, response)
+        Statusline.stop(context)
         if status ~= "success" then
           return vim.notify("Vibe failed: " .. status, vim.log.levels.ERROR)
         end
