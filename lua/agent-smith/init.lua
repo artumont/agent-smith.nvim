@@ -31,6 +31,7 @@ local Logger = require("agent-smith.logger")
 local Ops = require("agent-smith.ops")
 local Select = require("agent-smith.window.select-window")
 local Window = require("agent-smith.window")
+local Statusline = require("agent-smith.statusline")
 
 local M = {}
 local state = nil -- Module-local singleton. One instance per Neovim session.
@@ -265,6 +266,20 @@ end
 --- Show current plugin status.
 ---
 ---@return nil
+--- Return animated request text for lualine or another statusline plugin.
+--- Add `function() return require("agent-smith").statusline() end` as a
+--- lualine component. Returns an empty string while no tracked status runs.
+---@return string
+function M.statusline()
+  return Statusline.component()
+end
+
+--- Return whether an Agent-Smith statusline indicator is active.
+---@return boolean
+function M.statusline_active()
+  return Statusline.is_active()
+end
+
 function M.info()
   vim.notify(string.format(
     "Agent-Smith: %s (%s), %d requests",
