@@ -30,6 +30,7 @@ agent-smith-installation	agent-smith.txt	/*agent-smith-installation*
 agent-smith-introduction	agent-smith.txt	/*agent-smith-introduction*
 agent-smith-keymaps	agent-smith.txt	/*agent-smith-keymaps*
 agent-smith-lifecycle	agent-smith.txt	/*agent-smith-lifecycle*
+agent-smith-lualine	agent-smith.txt	/*agent-smith-lualine*
 agent-smith-multi-file	agent-smith.txt	/*agent-smith-multi-file*
 agent-smith-multi-file-protocol	agent-smith.txt	/*agent-smith-multi-file-protocol*
 agent-smith-options	agent-smith.txt	/*agent-smith-options*

@@ -342,6 +342,19 @@ Model and provider selection pickers: >lua
   end)
 <
 
+Lualine component:                                 *agent-smith-lualine*
+
+Show animated status for active Vibe requests: >lua
+  lualine_x = {
+    {
+      function() return require("agent-smith").statusline() end,
+      cond = function() return require("agent-smith").statusline_active() end,
+    },
+  }
+<
+
+The component displays a spinner and `Vibing` while the request runs.
+
 fzf-lua extension:                                 *agent-smith-fzf-lua-extension*
 
 Alternative to telescope: >lua
@@ -422,6 +435,8 @@ Public functions:                                        *smith.setup()*
   `smith.get_provider_name()` Get provider name string
   `smith.view_logs()`         Browse request history
   `smith.info()`              Show plugin status
+  `smith.statusline()`        Return active request text for lualine
+  `smith.statusline_active()` Return whether statusline text is active
 
 Provider constants:                                  *smith.Providers*
 
