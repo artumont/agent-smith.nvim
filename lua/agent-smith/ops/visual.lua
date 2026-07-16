@@ -69,7 +69,12 @@ function M.run(state, opts)
 
       -- Show status indicator during request
       local status_window = require("agent-smith.window.status-window").new(
-        "Agent-Smith implementing"
+        "Implementing",
+        {
+          buffer = context.buffer,
+          row = context.range.start.line - 1,
+          col = 0,
+        }
       )
       status_window:start()
 
@@ -81,10 +86,10 @@ function M.run(state, opts)
           status_window:stop()
 
           if status ~= "success" then
-            return vim.notify(
-              "Agent-Smith request " .. status,
-              vim.log.levels.ERROR
-            )
+            local details = vim.trim(response or "")
+            local message = "Agent-Smith request " .. status
+            if details ~= "" then message = message .. ":\n" .. details end
+            return vim.notify(message, vim.log.levels.ERROR)
           end
 
           -- Multi-file mode: parse and present each file change
