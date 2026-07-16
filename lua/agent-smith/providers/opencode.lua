@@ -1,7 +1,9 @@
 local Base = require("agent-smith.providers").BaseProvider
 local P = setmetatable({}, { __index = Base })
 function P:_get_provider_name() return "OpenCode" end
-function P:_get_default_model() return "opencode/claude-sonnet-4-5" end
+-- OpenCode ships this free model by default. Do not use the old
+-- opencode/claude-sonnet-4-5 identifier: current OpenCode installs do not list it.
+function P:_get_default_model() return "opencode/mimo-v2.5-free" end
 function P:_build_command(query, context) return { "opencode", "run", "--agent", "build", "-m", context.model, query } end
 function P:fetch_models(cb)
   vim.system({ "opencode", "models" }, { text = true }, function(r)
