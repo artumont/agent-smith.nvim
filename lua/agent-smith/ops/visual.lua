@@ -118,8 +118,14 @@ function M.run(state, opts)
           -- Insert imports at file's import section
           Imports.insert(context.buffer, imports, ft)
 
-          -- Replace the visual selection with the code body
-          context.range:replace_text(body)
+          -- Replace the visual selection with the code body. Marks can become
+          -- invalid if the buffer changed while the request was running.
+          if not context.range:replace_text(body) then
+            vim.notify(
+              "Agent-Smith: selection changed before response arrived; edit was not applied",
+              vim.log.levels.WARN
+            )
+          end
         end,
       })
     end,
