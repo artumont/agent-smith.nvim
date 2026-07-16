@@ -126,13 +126,24 @@ function M.approve_all(changes, done)
           end
         end
 
-        -- Apply the change
-        local ok = pcall(
-          vim.fn.writefile,
-          vim.split(change.content, "\n", { plain = true }),
-          change.path
-        )
-        if ok then applied = applied + 1 end
+        -- Apply the approved sandbox diff to the original project.
+        local ok = false
+        if change.delete then
+          local call_ok, result = pcall(vim.fn.delete, change.path)
+          ok = call_ok and result == 0
+        else
+          vim.fn.mkdir(vim.fs.dirname(change.path), "p")
+          ok = pcall(
+            vim.fn.writefile,
+            vim.split(change.content, "\n", { plain = true }),
+            change.path
+          )
+        end
+        if ok then
+          applied = applied + 1
+        else
+          vim.notify("Agent-Smith could not apply " .. change.path, vim.log.levels.ERROR)
+        end
       end
 
       i = i + 1
