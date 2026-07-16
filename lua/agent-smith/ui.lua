@@ -9,6 +9,16 @@ local gradient = {
   "#8cc37e", "#96d683", "#a0ea88", "#7bdb6d", "#00ff41",
 }
 
+local quotes = {
+  "There is no spoon.",
+  "Follow the white rabbit.",
+  "Free your mind.",
+  "What is real?",
+  "The choice is yours.",
+}
+
+local footer_namespace = vim.api.nvim_create_namespace("agent-smith.matrix-footer")
+
 local function configure_highlights()
   vim.api.nvim_set_hl(0, "AgentSmithMatrixBorder", { fg = "#00b33c", bold = true })
   vim.api.nvim_set_hl(0, "AgentSmithMatrixText", { fg = "#9ae6a4" })
@@ -41,6 +51,31 @@ end
 ---@return string
 function M.gradient_color(index)
   return gradient[(index - 1) % #gradient + 1]
+end
+
+---@return string
+function M.random_quote()
+  return quotes[math.random(#quotes)]
+end
+
+--- Add a right-aligned quote on a padded final row of a floating review buffer.
+---@param buf integer
+---@param height integer Floating window content height
+---@param quote string
+function M.add_quote_footer(buf, height, quote)
+  if not M.enabled() then return end
+  local line_count = vim.api.nvim_buf_line_count(buf)
+  local footer_row = math.max(line_count, height) - 1
+  if line_count <= footer_row then
+    local padding = {}
+    for _ = line_count, footer_row do table.insert(padding, "") end
+    vim.api.nvim_buf_set_lines(buf, line_count, -1, false, padding)
+  end
+  vim.api.nvim_buf_clear_namespace(buf, footer_namespace, 0, -1)
+  vim.api.nvim_buf_set_extmark(buf, footer_namespace, footer_row, 0, {
+    virt_text = { { "  " .. quote .. "  ", "AgentSmithMatrixDim" } },
+    virt_text_pos = "right_align",
+  })
 end
 
 return M

@@ -88,6 +88,7 @@ end
 function M.approve(change, cb)
   local is_new = change.snapshot == nil
   local matrix_style = UI.enabled()
+  local quote = matrix_style and UI.random_quote() or nil
   local action = change.delete and "Delete existing file"
     or (is_new and "Create new file" or "Replace existing file")
   local mode = "diff"
@@ -130,6 +131,7 @@ function M.approve(change, cb)
     vim.bo[buf].readonly = false
     vim.bo[buf].modifiable = true
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    if quote then UI.add_quote_footer(buf, vim.api.nvim_win_get_height(win), quote) end
     vim.bo[buf].modifiable = false
     vim.bo[buf].readonly = true
     apply_highlights(buf, lines, 7, action, is_new, mode, matrix_style)
