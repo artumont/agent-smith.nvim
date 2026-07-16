@@ -21,6 +21,7 @@ local Prompt = require("agent-smith.prompt")
 local Qfix = require("agent-smith.ops.qfix-helpers")
 
 local M = {}
+local results_namespace = vim.api.nvim_create_namespace("agent-smith.vibe-results")
 
 --- Configure the Quickfix window opened for Vibe results.
 ---
@@ -31,7 +32,19 @@ local function configure_results_window()
   for _, win in ipairs(vim.api.nvim_list_wins()) do
     local buf = vim.api.nvim_win_get_buf(win)
     if vim.bo[buf].buftype == "quickfix" then
-      vim.wo[win].winbar = " Agent-Smith Vibe Results | <CR> open location | q close "
+      local header = " Agent-Smith Vibe Results "
+      local controls = " <CR> open location   q / Esc close "
+      -- Winbars can be hidden by user UI configuration. Virtual lines keep
+      -- this header and its controls visible inside the Quickfix buffer.
+      vim.api.nvim_buf_set_extmark(buf, results_namespace, 0, 0, {
+        virt_lines_above = true,
+        virt_lines = {
+          { { header, "Title" } },
+          { { controls, "Comment" } },
+          { { "", "Normal" } },
+        },
+      })
+      vim.wo[win].winbar = header .. "|" .. controls
       vim.keymap.set("n", "q", function()
         if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
       end, { buffer = buf, nowait = true, desc = "Close Agent-Smith Vibe results" })
