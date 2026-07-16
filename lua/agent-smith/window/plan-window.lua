@@ -8,6 +8,13 @@ local Window = require("agent-smith.window")
 local M = {}
 local namespace = vim.api.nvim_create_namespace("agent-smith.vibe-plan")
 
+local function highlight_literal(buf, row, line, literal, group)
+  local start_col = line:find(literal, 1, true)
+  if start_col then
+    vim.api.nvim_buf_add_highlight(buf, namespace, group, row, start_col - 1, start_col - 1 + #literal)
+  end
+end
+
 ---@param plan table { files: string[], steps: string }
 ---@param cb fun(approved: boolean)
 function M.review(plan, cb)
@@ -43,6 +50,9 @@ function M.review(plan, cb)
   vim.bo[buf].readonly = true
   vim.wo[win].winhighlight = "Normal:NormalFloat,FloatBorder:Comment"
   vim.api.nvim_buf_add_highlight(buf, namespace, "Comment", 0, 0, -1)
+  for _, key in ipairs({ "<CR>", "q", "Esc" }) do
+    highlight_literal(buf, 0, lines[1], key, "Special")
+  end
   vim.api.nvim_buf_add_highlight(buf, namespace, "Title", 2, 0, -1)
   vim.api.nvim_buf_add_highlight(buf, namespace, "WarningMsg", 3, 0, -1)
   vim.api.nvim_buf_add_highlight(buf, namespace, "Title", 5, 0, -1)
