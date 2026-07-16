@@ -67,23 +67,37 @@ function M.run(state, opts)
     cb = function(ok, user)
       if not ok or vim.trim(user) == "" then return end
 
-      -- Show status indicator during request
-      local status_window = require("agent-smith.window.status-window").new(
-        "Implementing",
-        {
-          buffer = context.buffer,
-          row = context.range.start.line - 1,
-          col = 0,
-        }
-      )
-      status_window:start()
+      -- Bracket the selection with inline status lines, like 99. The top
+      -- extmark renders above the first selected row; the bottom one renders
+      -- below the final selected row. Both move with buffer edits.
+      local start_row, _, end_row = context.range:_api_positions()
+      if not start_row then
+        return vim.notify("Agent-Smith: visual selection is no longer valid", vim.log.levels.WARN)
+      end
+      local Status = require("agent-smith.window.status-window")
+      local top_status = Status.new("Implementing", {
+        buffer = context.buffer,
+        row = start_row,
+        col = 0,
+        above = true,
+      })
+      local bottom_status = Status.new("Implementing", {
+        buffer = context.buffer,
+        row = end_row,
+        col = 0,
+        above = false,
+      })
+      top_status:start()
+      bottom_status:start()
 
       context:start(user, {
         on_stdout = function(line)
-          status_window:push(line)
+          top_status:push(line)
+          bottom_status:push(line)
         end,
         on_complete = function(status, response)
-          status_window:stop()
+          top_status:stop()
+          bottom_status:stop()
 
           if status ~= "success" then
             local details = vim.trim(response or "")
