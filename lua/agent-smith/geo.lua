@@ -86,6 +86,19 @@ end
 ---
 ---@return table range
 function Range.from_visual_selection()
+  -- '< and '> are finalized only after leaving Visual mode. Invoking this
+  -- from a visual-mode mapping before Esc can read marks from an older
+  -- selection, which places status and replacements in the wrong location.
+  -- This follows 99's capture sequence.
+  local visual_mode = vim.fn.mode(1)
+  if visual_mode == "v" or visual_mode == "V" or visual_mode == "\22" then
+    vim.api.nvim_feedkeys(
+      vim.api.nvim_replace_termcodes("<Esc>", true, false, true),
+      "x",
+      false
+    )
+  end
+
   local buf = vim.api.nvim_get_current_buf()
   local start_pos = vim.fn.getpos("'<")
   local end_pos = vim.fn.getpos("'>")
@@ -93,7 +106,7 @@ function Range.from_visual_selection()
     buf,
     Point.new(buf, start_pos[2], start_pos[3] - 1), -- 1-based to 0-based
     Point.new(buf, end_pos[2], end_pos[3] - 1),
-    vim.fn.mode(1)
+    visual_mode
   )
 end
 
