@@ -222,12 +222,9 @@ Custom keymaps: >lua
   end)
 <
 
-Prompt window keymaps (while typing instructions):
-  CTRL-Enter Submit prompt from Insert mode
-  CTRL-S     Submit prompt from Insert mode
-  Esc Enter  Submit prompt from Normal mode
+Prompt window keymaps (shown in bottom border):
   :write     Submit prompt
-  Esc q      Cancel
+  Esc        Close prompt without submitting
 
 Multi-file approval window keymaps:
   <CR>      Approve this file change
