@@ -91,7 +91,7 @@ Call setup() once during plugin initialization: >lua
   local smith = require("agent-smith")
   smith.setup({
     provider = smith.Providers.PiProvider,
-    model = "auto",
+    -- Pi uses its configured default unless model is set explicitly.
     completion = {
       source = "native",
       custom_rules = { "path/to/rules/" },
