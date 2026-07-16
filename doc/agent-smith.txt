@@ -97,7 +97,8 @@ Call setup() once during plugin initialization: >lua
       custom_rules = { "path/to/rules/" },
     },
     md_files = { "AGENTS.md" },
-    tmp_dir = "./tmp",
+    -- Must be absolute and outside project. Provider must allow this path.
+    tmp_dir = "/tmp/agent-smith",
     default_keymaps = true,
   })
 <
@@ -109,7 +110,8 @@ Setup options:                                          *agent-smith-options*
   `logger`          Logger options: { level, path, print_on_error }
   `completion`      Completion config: { source, custom_rules, files }
   `md_files`        Context file names to discover (default: {"AGENTS.md"})
-  `tmp_dir`         Temp file directory for requests
+  `tmp_dir`         Absolute temp root outside project for sandbox sessions.
+                    Agent harness permissions must allow this path.
   `default_keymaps` Set false to disable default keymaps
 
 ==============================================================================
