@@ -66,6 +66,11 @@ function M.review(plan, cb)
   vim.keymap.set("n", "<Esc>", function() finish(false) end, {
     buffer = buf, nowait = true, desc = "Cancel Vibe plan",
   })
+  vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(win),
+    once = true,
+    callback = function() finish(false) end,
+  })
 end
 
 return M
