@@ -303,6 +303,12 @@ function M.statusline()
 	return Statusline.component()
 end
 
+--- Return optional active-status accent color for lualine.
+---@return table|nil color
+function M.statusline_color()
+	return Statusline.color()
+end
+
 --- Return whether an Agent-Smith statusline indicator is active.
 ---@return boolean
 function M.statusline_active()

@@ -37,4 +37,10 @@ function M.gradient_group(index)
   return "AgentSmithMatrixGradient" .. ((index - 1) % #gradient + 1)
 end
 
+---@param index integer
+---@return string
+function M.gradient_color(index)
+  return gradient[(index - 1) % #gradient + 1]
+end
+
 return M

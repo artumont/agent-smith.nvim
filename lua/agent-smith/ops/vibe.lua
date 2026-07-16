@@ -13,9 +13,7 @@ local Qfix = require("agent-smith.ops.qfix-helpers")
 local Multi = require("agent-smith.ops.multi-file")
 local Session = require("agent-smith.ops.vibe-session")
 local PlanWindow = require("agent-smith.window.plan-window")
-local ProgressWindow = require("agent-smith.window.vibe-progress")
 local Statusline = require("agent-smith.statusline")
-local UI = require("agent-smith.ui")
 
 local M = {}
 local results_namespace = vim.api.nvim_create_namespace("agent-smith.vibe-results")
@@ -47,19 +45,6 @@ local function configure_results_window()
       return
     end
   end
-end
-
-local function start_progress(context, label)
-  Statusline.start(context, label)
-  if not UI.enabled() then return nil end
-  local progress = ProgressWindow.new(label)
-  progress:start()
-  return progress
-end
-
-local function stop_progress(context, progress)
-  Statusline.stop(context)
-  if progress then progress:stop() end
 end
 
 local function request_context(state, session, instruction)
@@ -96,10 +81,10 @@ end
 
 local function execute_plan(state, session, user, plan)
   local context = request_context(state, session, Prompts.vibe_execute(plan.raw, plan.files))
-  local progress = start_progress(context, "Executing Vibe")
+  Statusline.start(context, "Executing Vibe")
   context:start(user, {
     on_complete = function(status, response)
-      stop_progress(context, progress)
+      Statusline.stop(context)
       if status ~= "success" then
         failure("Vibe execution", session, status, response)
         return
@@ -135,10 +120,10 @@ local function start_session(state, user)
   end
 
   local context = request_context(state, session, Prompts.vibe_plan())
-  local progress = start_progress(context, "Planning Vibe")
+  Statusline.start(context, "Planning Vibe")
   context:start(user, {
     on_complete = function(status, response)
-      stop_progress(context, progress)
+      Statusline.stop(context)
       if status ~= "success" then
         failure("Vibe planning", session, status, response)
         return

@@ -2,6 +2,8 @@
 ---
 --- Lightweight lualine-compatible status component for active requests.
 
+local UI = require("agent-smith.ui")
+
 local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 local active = {}
 local frame = 1
@@ -52,6 +54,13 @@ function M.component()
   local _, label = next(active)
   if not label then return "" end
   return string.format("%s %s", frames[frame], label)
+end
+
+--- Return current optional accent color for statusline integrations.
+---@return table|nil color Lualine-compatible color table
+function M.color()
+  if not UI.enabled() then return nil end
+  return { fg = UI.gradient_color(frame) }
 end
 
 --- Return whether any Agent-Smith request has a statusline indicator.
