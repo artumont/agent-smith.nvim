@@ -5,6 +5,7 @@
 local UI = require("agent-smith.ui")
 
 local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+local interval = 70
 local active = {}
 local frame = 1
 local ticking = false
@@ -26,7 +27,7 @@ local function tick()
 
   frame = frame % #frames + 1
   redraw()
-  vim.defer_fn(tick, 120)
+  vim.defer_fn(tick, interval)
 end
 
 --- Begin displaying status for a request.

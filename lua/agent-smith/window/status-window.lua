@@ -3,8 +3,11 @@
 --- Inline request feedback rendered as virtual lines near selected code.
 --- No notification or floating window is created.
 
+local UI = require("agent-smith.ui")
+
 local namespace = vim.api.nvim_create_namespace("agent-smith.request-status")
 local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
+local interval = 70
 
 local M = {}
 M.__index = M
@@ -36,9 +39,21 @@ function M:_render()
   local line_count = vim.api.nvim_buf_line_count(self.buffer)
   local row = math.max(0, math.min(self.row, line_count - 1))
   local text = string.format("%s %s", frames[self.frame], self.label)
+  local chunks = {}
+  if UI.enabled() then
+    local char_count = vim.fn.strchars(text)
+    for index = 0, char_count - 1 do
+      table.insert(chunks, {
+        vim.fn.strcharpart(text, index, 1),
+        UI.gradient_group(self.frame + index),
+      })
+    end
+  else
+    chunks = { { text, "Comment" } }
+  end
   self.extmark = vim.api.nvim_buf_set_extmark(self.buffer, namespace, row, self.col, {
     id = self.extmark,
-    virt_lines = { { { text, "Comment" } } },
+    virt_lines = { chunks },
     virt_lines_above = self.above,
   })
   self.frame = self.frame % #frames + 1
@@ -52,7 +67,7 @@ function M:start()
   local function tick()
     if not self.running then return end
     self:_render()
-    vim.defer_fn(tick, 120)
+    vim.defer_fn(tick, interval)
   end
   vim.defer_fn(tick, 120)
 end
