@@ -186,6 +186,7 @@ All operations are accessed via Lua functions: >lua
 
   *:AgentSmithVibe*       |smith.vibe()|
   Open-ended analysis into quickfix list.
+  Result header: <CR> opens location; q or Esc closes results.
 
   *:AgentSmithTutorial*   |smith.tutorial()|
   Generate a tutorial in a split window.
