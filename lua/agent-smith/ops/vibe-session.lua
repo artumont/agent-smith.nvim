@@ -101,6 +101,8 @@ function M.create(current_file, temp_root)
   return {
     root = session_root,
     project_root = project_root,
+    source_current_file = current_file,
+    temp_root = temp_root,
     snapshot = snapshot,
     current_relative = current_relative,
     current_file = current_relative and join(session_root, current_relative)
@@ -110,6 +112,15 @@ end
 
 function M.cleanup(session)
   if session and session.root then vim.fn.delete(session.root, "rf") end
+end
+
+--- Discard any plan-phase sandbox mutations and copy originals again.
+---@param session table
+---@return table fresh_session
+function M.recreate(session)
+  local fresh = M.create(session.source_current_file, session.temp_root)
+  M.cleanup(session)
+  return fresh
 end
 
 --- Parse and validate model-requested edit scope.

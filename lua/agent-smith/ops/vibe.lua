@@ -140,7 +140,13 @@ local function start_session(state, user)
           Session.cleanup(session)
           return
         end
-        execute_plan(state, session, user, plan)
+        local refresh_ok, fresh_session = pcall(Session.recreate, session)
+        if not refresh_ok then
+          Session.cleanup(session)
+          vim.notify("Unable to refresh Vibe sandbox: " .. tostring(fresh_session), vim.log.levels.ERROR)
+          return
+        end
+        execute_plan(state, fresh_session, user, plan)
       end)
     end,
   })
