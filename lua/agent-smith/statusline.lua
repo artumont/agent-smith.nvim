@@ -2,11 +2,12 @@
 ---
 --- Lightweight lualine-compatible status component for active requests.
 
+local UI = require("agent-smith.ui")
+
 local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏" }
 local active = {}
 local frame = 1
 local ticking = false
-local matrix_mode = false
 
 local M = {}
 
@@ -49,20 +50,20 @@ end
 
 --- Return status text for a lualine component.
 ---@return string
+local function gradient_text(text)
+  local chunks = {}
+  for index = 1, #text do
+    local group = UI.gradient_group(frame + index - 1)
+    table.insert(chunks, "%#" .. group .. "#" .. text:sub(index, index))
+  end
+  return table.concat(chunks) .. "%*"
+end
+
 function M.component()
   local _, label = next(active)
   if not label then return "" end
   local text = string.format("%s %s", frames[frame], label)
-  return matrix_mode and "%#AgentSmithMatrix#" .. text .. "%*" or text
-end
-
---- Enable or disable the optional statusline accent.
----@param enabled boolean
-function M.set_matrix_mode(enabled)
-  matrix_mode = enabled
-  if enabled then
-    vim.api.nvim_set_hl(0, "AgentSmithMatrix", { fg = "#00ff41", bold = true })
-  end
+  return UI.enabled() and gradient_text(text) or text
 end
 
 --- Return whether any Agent-Smith request has a statusline indicator.

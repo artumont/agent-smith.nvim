@@ -34,6 +34,7 @@ local Ops = require("agent-smith.ops")
 local Select = require("agent-smith.window.select-window")
 local Window = require("agent-smith.window")
 local Statusline = require("agent-smith.statusline")
+local UI = require("agent-smith.ui")
 
 local M = {}
 local state = nil -- Module-local singleton. One instance per Neovim session.
@@ -88,7 +89,7 @@ function M.setup(opts)
 	state = State.new(opts)
 	state.model = opts.model or opts.provider:_get_default_model()
 	Logger:configure(opts.logger)
-	Statusline.set_matrix_mode(state.matrix_mode)
+	UI.set_accent(state.matrix_mode)
 
 	require("agent-smith.extensions").init(state)
 
@@ -124,7 +125,7 @@ function M.setup(opts)
 			require("agent-smith.window.first-run-window").open(function(choice)
 				State.write_choice(choice)
 				state.matrix_mode = choice == "red"
-				Statusline.set_matrix_mode(state.matrix_mode)
+				UI.set_accent(state.matrix_mode)
 			end)
 		end)
 	end
