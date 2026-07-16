@@ -71,6 +71,10 @@ function M.create(current_file, temp_root)
     or vim.fn.getcwd()
   temp_root = temp_root or (vim.fn.tempname():match("^(.*)/[^/]+$") or "/tmp")
   temp_root = vim.fn.fnamemodify(temp_root, ":p"):gsub("/$", "")
+  local normalized_project = vim.fs.normalize(project_root):gsub("/$", "")
+  if temp_root == normalized_project or temp_root:sub(1, #normalized_project + 1) == normalized_project .. "/" then
+    error("Vibe tmp_dir must be outside the original project: " .. temp_root)
+  end
   local session_root = string.format(
     "%s/sessions/vibe-%d-%d",
     temp_root,
