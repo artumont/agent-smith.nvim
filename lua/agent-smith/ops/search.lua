@@ -56,9 +56,6 @@ function M.run(state, opts)
           items = items,
         })
         vim.cmd("copen")
-        local smith = require("agent-smith")
-        local msg = smith.quote("search")
-        if msg then vim.notify(msg) end
       end,
     })
   end

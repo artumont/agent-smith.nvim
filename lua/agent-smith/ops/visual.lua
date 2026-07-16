@@ -117,10 +117,9 @@ function M.run(state, opts)
               )
             end
             return Multi.approve_all(changes, function(applied, total)
-              local smith = require("agent-smith")
-              local msg = smith.quote("success")
-                or string.format("Applied %d of %d file changes", applied, total)
-              vim.notify(msg)
+              vim.notify(
+                string.format("Applied %d of %d file changes", applied, total)
+              )
             end)
           end
 

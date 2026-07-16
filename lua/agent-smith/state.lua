@@ -44,7 +44,7 @@ local M = {}
 M.__index = M
 
 local function choice_file()
-  return Utils.named_tmp_file(nil, "first-run-choice")
+  return vim.fs.joinpath(vim.fn.stdpath("data"), "agent-smith", "preference")
 end
 
 --- Read the persisted first-run choice.

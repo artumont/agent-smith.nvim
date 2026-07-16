@@ -30,9 +30,6 @@ function M.run(state, opts)
             Window.display_full_screen_message(
               vim.split(response, "\n", { plain = true })
             )
-            local smith = require("agent-smith")
-            local msg = smith.quote("tutorial")
-            if msg then vim.notify(msg) end
           else
             vim.notify("Tutorial failed", vim.log.levels.ERROR)
           end

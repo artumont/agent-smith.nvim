@@ -6,6 +6,7 @@ local frames = { "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", 
 local active = {}
 local frame = 1
 local ticking = false
+local matrix_mode = false
 
 local M = {}
 
@@ -51,7 +52,17 @@ end
 function M.component()
   local _, label = next(active)
   if not label then return "" end
-  return string.format("%s %s", frames[frame], label)
+  local text = string.format("%s %s", frames[frame], label)
+  return matrix_mode and "%#AgentSmithMatrix#" .. text .. "%*" or text
+end
+
+--- Enable or disable the optional statusline accent.
+---@param enabled boolean
+function M.set_matrix_mode(enabled)
+  matrix_mode = enabled
+  if enabled then
+    vim.api.nvim_set_hl(0, "AgentSmithMatrix", { fg = "#00ff41", bold = true })
+  end
 end
 
 --- Return whether any Agent-Smith request has a statusline indicator.
