@@ -1,0 +1,538 @@
+*agent-smith.txt*  AI-assisted code editing for Neovim
+
+Author:   Agent-Smith Contributors
+Version:  0.1.0
+License:  MIT
+
+==============================================================================
+CONTENTS                                              *agent-smith-contents*
+
+  1. Introduction ................. |agent-smith-introduction|
+  2. Requirements ................. |agent-smith-requirements|
+  3. Installation ................. |agent-smith-installation|
+  4. Setup ........................ |agent-smith-setup|
+  5. Providers .................... |agent-smith-providers|
+  6. Commands ..................... |agent-smith-commands|
+  7. Keymaps ..................... |agent-smith-keymaps|
+  8. Completions .................. |agent-smith-completions|
+  9. Multi-File Edits ............. |agent-smith-multi-file|
+  10. Import Handling ............. |agent-smith-imports|
+  11. Extensions .................. |agent-smith-extensions|
+  12. Configuration ................ |agent-smith-configuration|
+  13. API Reference ................ |agent-smith-api|
+  14. Architecture ................ |agent-smith-architecture|
+  15. Troubleshooting ............. |agent-smith-troubleshooting|
+
+==============================================================================
+1. Introduction                                   *agent-smith-introduction*
+
+Agent-Smith is a Neovim plugin for AI-assisted code editing. It provides
+bounded editing where AI only modifies what you select, with explicit
+approval for multi-file changes.
+
+Key features:
+- Visual selection editing (AI replaces only selected code)
+- Multi-provider support (OpenCode, Claude, Cursor, Gemini, Kiro, Pi)
+- Multi-file edits with per-file approval
+- Import detection and routing
+- Semantic search into quickfix list
+- Custom rules (#SKILL.md) and file references (@path)
+
+The core philosophy is user control: no changes happen without your
+explicit action.
+
+==============================================================================
+2. Requirements                                   *agent-smith-requirements*
+
+- Neovim >= 0.9
+- One supported AI CLI in PATH:
+  - opencode (https://opencode.ai)
+  - claude (https://claude.ai)
+  - cursor-agent (https://cursor.com)
+  - gemini (https://gemini.google.com)
+  - kiro-cli (https://kiro.dev)
+  - pi (https://github.com/badlogic/pi-mono)
+
+Optional:
+- telescope.nvim (for model/provider pickers)
+- fzf-lua (alternative to telescope)
+- nvim-cmp or blink.cmp (for enhanced completions)
+
+==============================================================================
+3. Installation                                   *agent-smith-installation*
+
+With lazy.nvim: >lua
+  {
+    "your-username/agent-smith.nvim",
+    config = function()
+      require("agent-smith").setup()
+    end,
+  }
+<
+
+With packer.nvim: >lua
+  use {
+    "your-username/agent-smith.nvim",
+    config = function()
+      require("agent-smith").setup()
+    end,
+  }
+<
+
+Manual installation: >bash
+  cd ~/.local/share/nvim/site/pack/plugins/start
+  git clone https://github.com/your-username/agent-smith.nvim.git
+<
+
+==============================================================================
+4. Setup                                              *agent-smith-setup*
+
+Call setup() once during plugin initialization: >lua
+  local smith = require("agent-smith")
+  smith.setup({
+    provider = smith.Providers.PiProvider,
+    model = "auto",
+    completion = {
+      source = "native",
+      custom_rules = { "path/to/rules/" },
+    },
+    md_files = { "AGENTS.md" },
+    tmp_dir = "./tmp",
+    default_keymaps = true,
+  })
+<
+
+Setup options:                                          *agent-smith-options*
+
+  `provider`        AI provider to use (default: OpenCodeProvider)
+  `model`           Model identifier (default: provider's default)
+  `logger`          Logger options: { level, path, print_on_error }
+  `completion`      Completion config: { source, custom_rules, files }
+  `md_files`        Context file names to discover (default: {"AGENTS.md"})
+  `tmp_dir`         Temp file directory for requests
+  `default_keymaps` Set false to disable default keymaps
+
+==============================================================================
+5. Providers                                         *agent-smith-providers*
+
+Agent-Smith supports multiple AI CLI backends. Each provider implements
+the same interface, so switching is seamless.
+
+Available providers:                                    *agent-smith-provider-list*
+
+  `OpenCodeProvider`    Default. Uses opencode CLI.
+  `ClaudeCodeProvider`  Uses claude CLI.
+  `CursorAgentProvider` Uses cursor-agent CLI.
+  `GeminiCLIProvider`   Uses gemini CLI.
+  `KiroProvider`        Uses kiro-cli CLI.
+  `PiProvider`          Uses pi CLI.
+
+Switching providers: >lua
+  -- At setup
+  smith.setup({ provider = smith.Providers.PiProvider })
+
+  -- At runtime
+  smith.set_provider(smith.Providers.ClaudeCodeProvider)
+
+  -- Via Telescope (if installed)
+  vim.keymap.set("n", "<leader>ap", function()
+    require("agent-smith.extensions.telescope").select_provider()
+  end)
+<
+
+Switching models: >lua
+  -- At runtime
+  smith.set_model("claude-sonnet-4-5")
+
+  -- Via Telescope
+  vim.keymap.set("n", "<leader>am", function()
+    require("agent-smith.extensions.telescope").select_model()
+  end)
+<
+
+Adding a custom provider:                               *agent-smith-custom-provider*
+
+Create a new file in lua/agent-smith/providers/ with: >lua
+  local Base = require("agent-smith.providers").BaseProvider
+  local P = setmetatable({}, { __index = Base })
+
+  function P:_get_provider_name() return "MyProvider" end
+  function P:_get_default_model() return "my-model" end
+  function P:_build_command(query, context)
+    return { "my-cli", "--print", query }
+  end
+
+  return P
+<
+
+Then register in lua/agent-smith/providers/init.lua.
+
+==============================================================================
+6. Commands                                         *agent-smith-commands*
+
+All operations are accessed via Lua functions: >lua
+  local smith = require("agent-smith")
+<
+
+  *:AgentSmithVisual*     |smith.visual()|
+  Visual selection edit. Select code, invoke, type instructions.
+
+  *:AgentSmithMultiFile*  |smith.multi_file()|
+  Multi-file edit with per-file approval.
+
+  *:AgentSmithSearch*     |smith.search()|
+  Semantic search into quickfix list.
+
+  *:AgentSmithVibe*       |smith.vibe()|
+  Open-ended analysis into quickfix list.
+
+  *:AgentSmithTutorial*   |smith.tutorial()|
+  Generate a tutorial in a split window.
+
+  *:AgentSmithCancel*     |smith.stop_all_requests()|
+  Cancel all in-flight requests.
+
+  *:AgentSmithLogs*       |smith.view_logs()|
+  Browse request history.
+
+  *:AgentSmithInfo*       |smith.info()|
+  Show current provider and model.
+
+==============================================================================
+7. Keymaps                                         *agent-smith-keymaps*
+
+Default keymaps (set default_keymaps = false to disable):
+
+  Visual mode:
+    <leader>as    Visual edit (replaces selection)
+    <leader>aS    Multi-file edit (with approval)
+
+  Normal mode:
+    <leader>af    Semantic search
+    <leader>av    Vibe mode
+    <leader>ax    Cancel all requests
+
+Custom keymaps: >lua
+  vim.keymap.set("v", "<leader>e", function()
+    require("agent-smith").visual()
+  end)
+
+  vim.keymap.set("n", "<leader>s", function()
+    require("agent-smith").search()
+  end)
+<
+
+Prompt window keymaps (while typing instructions):
+  :w        Submit prompt
+  q         Cancel
+
+Multi-file approval window keymaps:
+  <CR>      Approve this file change
+  q         Reject this file change
+  Q         Reject all remaining changes
+
+==============================================================================
+8. Completions                                     *agent-smith-completions*
+
+While typing in the prompt window, you can reference:
+
+  #rules      Type # to autocomplete SKILL.md files
+  @files      Type @ to autocomplete project files
+
+Rules are SKILL.md files in configured directories. Files are discovered
+via git ls-files.
+
+Completion sources:                                    *agent-smith-completion-sources*
+
+  `native`    Built-in omnifunc (default, no dependencies)
+  `cmp`       nvim-cmp source (requires hrsh7th/nvim-cmp)
+  `blink`     blink.cmp source (requires saghen/blink.compat)
+
+Configuration: >lua
+  smith.setup({
+    completion = {
+      source = "native",  -- or "cmp" or "blink"
+      custom_rules = { "path/to/rules/" },
+    },
+  })
+<
+
+==============================================================================
+9. Multi-File Edits                                *agent-smith-multi-file*
+
+Multi-file edits let the AI propose changes across multiple files. Each
+change is presented for approval before application.
+
+Protocol:                                              *agent-smith-multi-file-protocol*
+
+The AI outputs structured blocks: >text
+  <FILE_CHANGE>/absolute/path/to/file.lua</FILE_CHANGE>
+  <CONTENT>
+  -- full replacement content for this file
+  </CONTENT>
+<
+
+Approval flow:
+1. Each file change is shown in an approval window
+2. User presses <CR> (approve), q (reject), or Q (reject all)
+3. Approved changes are written to disk
+4. Staleness detection warns if file changed during approval
+
+Usage: >lua
+  -- Via keymap (visual mode)
+  <leader>aS
+
+  -- Via API
+  smith.multi_file()
+
+  -- With additional_prompt
+  smith.multi_file({
+    additional_prompt = "Extract this function to utils.lua",
+  })
+<
+
+==============================================================================
+10. Import Handling                                  *agent-smith-imports*
+
+When the AI response contains import statements, they are automatically
+routed to the file's import section instead of the visual selection.
+
+Supported languages:
+- Lua: local X = require("..."), require("...")
+- TypeScript/JavaScript: import X from "...", const X = require("...")
+- Python: import X, from X import Y
+- Ruby: require "...", require_relative "...", use X
+- Go: import "...", import ( ... )
+
+Example:
+1. Select a function body
+2. Type "use the debounce utility from utils"
+3. AI response contains:
+   - Import: local debounce = require("utils").debounce
+   - Code: debounce(fn, 300)
+4. Import is placed at file top, code replaces selection
+
+==============================================================================
+11. Extensions                                     *agent-smith-extensions*
+
+Extensions add optional features. They are loaded based on availability.
+
+Worker extension:                                   *agent-smith-worker-extension*
+
+Track work items for iterative development: >lua
+  local worker = require("agent-smith").Extensions.Worker
+
+  -- Set work item
+  worker.set_work({ description = "Implement user authentication" })
+
+  -- Search for remaining work
+  worker.search()
+<
+
+Telescope extension:                             *agent-smith-telescope-extension*
+
+Model and provider selection pickers: >lua
+  vim.keymap.set("n", "<leader>am", function()
+    require("agent-smith.extensions.telescope").select_model()
+  end)
+
+  vim.keymap.set("n", "<leader>ap", function()
+    require("agent-smith.extensions.telescope").select_provider()
+  end)
+<
+
+fzf-lua extension:                                 *agent-smith-fzf-lua-extension*
+
+Alternative to telescope: >lua
+  vim.keymap.set("n", "<leader>am", function()
+    require("agent-smith.extensions.fzf-lua").select_model()
+  end)
+<
+
+==============================================================================
+12. Configuration                                 *agent-smith-configuration*
+
+AGENTS.md discovery:                            *agent-smith-agents-discovery*
+
+The plugin automatically discovers AGENTS.md files from the current
+file's directory up to the git root. This provides hierarchical project
+context.
+
+Example structure: >text
+  project/
+  ├── AGENTS.md           (project-wide rules)
+  ├── src/
+  │   ├── AGENTS.md       (src-specific rules)
+  │   └── api/
+  │       └── AGENTS.md   (api-specific rules)
+<
+
+All three files are injected when editing files in src/api/.
+
+Custom context files:                             *agent-smith-custom-context*
+
+Configure additional context files: >lua
+  smith.setup({
+    md_files = { "AGENTS.md", "CONVENTIONS.md", "PATTERNS.md" },
+  })
+<
+
+Custom rules:                                       *agent-smith-custom-rules*
+
+SKILL.md files provide project-specific context: >text
+  rules/
+  ├── vim/
+  │   └── SKILL.md      (accessed as #vim)
+  ├── python/
+  │   └── SKILL.md      (accessed as #python)
+  └── cloudflare/
+      └── SKILL.md      (accessed as #cloudflare)
+<
+
+Configuration: >lua
+  smith.setup({
+    completion = {
+      custom_rules = { "rules/" },
+    },
+  })
+<
+
+Usage in prompt: >text
+  #vim Add error handling following vim conventions
+<
+
+==============================================================================
+13. API Reference                                     *agent-smith-api*
+
+Public functions:                                        *smith.setup()*
+
+  `smith.setup(opts?)`        Initialize plugin
+  `smith.visual(opts?)`       Visual selection edit
+  `smith.multi_file(opts?)`   Multi-file edit with approval
+  `smith.search(opts?)`       Semantic search
+  `smith.vibe(opts?)`         Vibe mode
+  `smith.tutorial(opts?)`     Tutorial generation
+  `smith.stop_all_requests()` Cancel all in-flight requests
+  `smith.clear_previous_requests()` Clear request history
+  `smith.set_model(model)`    Set active model
+  `smith.get_model()`         Get current model
+  `smith.set_provider(p)`     Set active provider
+  `smith.get_provider()`      Get current provider
+  `smith.get_provider_name()` Get provider name string
+  `smith.view_logs()`         Browse request history
+  `smith.info()`              Show plugin status
+
+Provider constants:                                  *smith.Providers*
+
+  `smith.Providers.OpenCodeProvider`
+  `smith.Providers.ClaudeCodeProvider`
+  `smith.Providers.CursorAgentProvider`
+  `smith.Providers.GeminiCLIProvider`
+  `smith.Providers.KiroProvider`
+  `smith.Providers.PiProvider`
+
+Extensions:                                       *smith.Extensions*
+
+  `smith.Extensions.Worker`   Work item tracking
+
+Operation options:                                     *smith.Opts*
+
+All operations accept:
+  `additional_prompt`   string   Skip prompt window, use directly
+
+Example: >lua
+  smith.search({
+    additional_prompt = "Find all API endpoints",
+  })
+<
+
+==============================================================================
+14. Architecture                                   *agent-smith-architecture*
+
+Request lifecycle:                                 *agent-smith-lifecycle*
+
+  1. User invokes operation (visual/search/vibe)
+  2. Prompt window opens for instructions
+  3. User types, presses :w to submit
+  4. Context assembled:
+     - AGENTS.md files from directory hierarchy
+     - Operation-specific system prompt
+     - User instructions
+     - Current file path
+     - Resolved #rules and @files
+  5. Provider CLI spawned asynchronously
+  6. Response received
+  7. Parsed and applied:
+     - Visual: imports extracted, selection replaced
+     - Search: quickfix list populated
+     - Multi-file: approval flow per file
+
+Provider contract:                              *agent-smith-provider-contract*
+
+All providers implement:
+  `_build_command(query, context)`  Build CLI command array
+  `_get_provider_name()`           Return display name
+  `_get_default_model()`           Return default model ID
+  `fetch_models(callback)`         List available models (optional)
+
+State management:                                   *agent-smith-state*
+
+Single State singleton holds:
+- Current provider and model
+- Provider override (runtime switching)
+- Discovered rules and context files
+- Request tracking history
+- Completion configuration
+
+==============================================================================
+15. Troubleshooting                               *agent-smith-troubleshooting*
+
+"Provider not configured":                      *agent-smith-error-provider*
+
+  Ensure setup() is called with a valid provider:
+  >lua
+    smith.setup({ provider = smith.Providers.OpenCodeProvider })
+  <
+
+"Select code first":                          *agent-smith-error-selection*
+
+  You must be in visual mode and have text selected before invoking
+  visual() or multi_file().
+
+"Request failed":                                *agent-smith-error-request*
+
+  Check:
+  1. Provider CLI is installed and in PATH
+  2. Provider CLI is authenticated (if required)
+  3. Network connection (if using cloud providers)
+  4. View logs: smith.view_logs()
+
+Empty quickfix list:                         *agent-smith-error-quickfix*
+
+  The AI response didn't match the expected format. Try:
+  1. Rephrase your search query
+  2. Use a different model
+  3. Check provider logs
+
+Multi-file changes not applied:          *agent-smith-error-multi-file*
+
+  Ensure the AI output includes proper FILE_CHANGE/CONTENT blocks.
+  Not all models handle the multi-file format equally well.
+
+Import not detected:                        *agent-smith-error-imports*
+
+  Only single-line imports are detected. Multi-line imports like:
+  >lua
+    local foo = require("bar").baz
+  <
+
+  are detected, but:
+  >lua
+    local foo = require("bar")
+      .baz
+  <
+
+  are not.
+
+==============================================================================
+ vim:tw=78:ts=8:ft=help:norl:
