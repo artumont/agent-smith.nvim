@@ -65,6 +65,11 @@ Range.__index = Range
 ---@param end_ table End Point
 ---@return table range
 function Range.new(buffer, start_, end_)
+  -- Visual marks can be returned in cursor direction. Normalize them into
+  -- buffer order because nvim_buf_get_text/set_text require start <= end.
+  if start_.line > end_.line or (start_.line == end_.line and start_.col > end_.col) then
+    start_, end_ = end_, start_
+  end
   return setmetatable({ buffer = buffer, start = start_, end_ = end_ }, Range)
 end
 
