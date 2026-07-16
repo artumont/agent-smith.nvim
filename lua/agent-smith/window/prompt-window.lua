@@ -53,6 +53,7 @@ function M.capture(title, opts)
   vim.wo[win].scrolloff = 3
 
   vim.bo[buf].buftype = "acwrite"
+  vim.bo[buf].filetype = "agent-smith-prompt"
   vim.bo[buf].bufhidden = "wipe"
   vim.bo[buf].swapfile = false
   vim.api.nvim_buf_set_name(buf, string.format("agent-smith://prompt/%d", buf))

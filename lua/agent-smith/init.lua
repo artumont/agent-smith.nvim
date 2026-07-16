@@ -1,6 +1,8 @@
 --- agent-smith/init.lua
 ---
---- Public API for Agent-Smith, a Neovim plugin for AI-assisted code editing.
+--- Mr. Anderson, I’ve been expecting you…
+---
+--- This is the public API for Agent-Smith, a Neovim plugin for AI-assisted code editing.
 ---
 --- Agent-Smith works by:
 --- 1. Capturing a visual selection (or operating on search/vibe)
@@ -43,12 +45,12 @@ local state = nil -- Module-local singleton. One instance per Neovim session.
 ---   local smith = require("agent-smith")
 ---   smith.setup({ provider = smith.Providers.PiProvider })
 M.Providers = {
-  OpenCodeProvider = require("agent-smith.providers.opencode"),
-  ClaudeCodeProvider = require("agent-smith.providers.claude"),
-  CursorAgentProvider = require("agent-smith.providers.cursor"),
-  GeminiCLIProvider = require("agent-smith.providers.gemini"),
-  KiroProvider = require("agent-smith.providers.kiro"),
-  PiProvider = require("agent-smith.providers.pi"),
+	OpenCodeProvider = require("agent-smith.providers.opencode"),
+	ClaudeCodeProvider = require("agent-smith.providers.claude"),
+	CursorAgentProvider = require("agent-smith.providers.cursor"),
+	GeminiCLIProvider = require("agent-smith.providers.gemini"),
+	KiroProvider = require("agent-smith.providers.kiro"),
+	PiProvider = require("agent-smith.providers.pi"),
 }
 
 --- Extension modules that can be accessed directly.
@@ -58,8 +60,8 @@ M.Extensions = { Worker = require("agent-smith.extensions.worker") }
 --- Guard function: returns current state or errors if setup() not called.
 --- All public functions that need state call this first.
 local function configured()
-  assert(state, "Call require('agent-smith').setup() first")
-  return state
+	assert(state, "Call require('agent-smith').setup() first")
+	return state
 end
 
 --- Initialize Agent-Smith plugin.
@@ -80,30 +82,42 @@ end
 ---   - default_keymaps: boolean (set false to disable default keymaps)
 ---@return table M The module table for chaining
 function M.setup(opts)
-  opts = opts or {}
-  opts.provider = opts.provider or M.Providers.OpenCodeProvider
+	opts = opts or {}
+	opts.provider = opts.provider or M.Providers.OpenCodeProvider
 
-  state = State.new(opts)
-  state.model = opts.model or opts.provider:_get_default_model()
-  Logger:configure(opts.logger)
+	state = State.new(opts)
+	state.model = opts.model or opts.provider:_get_default_model()
+	Logger:configure(opts.logger)
 
-  require("agent-smith.extensions").init(state)
+	require("agent-smith.extensions").init(state)
 
-  -- Default keymaps: visual edit, multi-file, search, vibe, cancel
-  if opts.default_keymaps ~= false then
-    vim.keymap.set("v", "<leader>as", function() M.visual() end, { desc = "Agent-Smith visual edit" })
-    vim.keymap.set("v", "<leader>aS", function() M.multi_file() end, { desc = "Agent-Smith multi-file edit" })
-    vim.keymap.set("n", "<leader>af", function() M.search() end, { desc = "Agent-Smith search" })
-    vim.keymap.set("n", "<leader>av", function() M.vibe() end, { desc = "Agent-Smith vibe" })
-    vim.keymap.set("n", "<leader>ax", function() M.stop_all_requests() end, { desc = "Agent-Smith cancel" })
-  end
+	-- Default keymaps: visual edit, multi-file, search, vibe, cancel
+	if opts.default_keymaps ~= false then
+		vim.keymap.set("v", "<leader>as", function()
+			M.visual()
+		end, { desc = "Agent-Smith visual edit" })
+		vim.keymap.set("v", "<leader>aS", function()
+			M.multi_file()
+		end, { desc = "Agent-Smith multi-file edit" })
+		vim.keymap.set("n", "<leader>af", function()
+			M.search()
+		end, { desc = "Agent-Smith search" })
+		vim.keymap.set("n", "<leader>av", function()
+			M.vibe()
+		end, { desc = "Agent-Smith vibe" })
+		vim.keymap.set("n", "<leader>ax", function()
+			M.stop_all_requests()
+		end, { desc = "Agent-Smith cancel" })
+	end
 
-  -- Safety: kill all provider processes when Neovim exits
-  vim.api.nvim_create_autocmd("VimLeavePre", {
-    callback = function() M.stop_all_requests() end
-  })
+	-- Safety: kill all provider processes when Neovim exits
+	vim.api.nvim_create_autocmd("VimLeavePre", {
+		callback = function()
+			M.stop_all_requests()
+		end,
+	})
 
-  return M
+	return M
 end
 
 --- Start a visual selection edit.
@@ -124,7 +138,7 @@ end
 ---   - multi_file: boolean (use multi-file protocol instead)
 ---@return nil
 function M.visual(opts)
-  return Ops.visual.run(configured(), opts)
+	return Ops.visual.run(configured(), opts)
 end
 
 --- Start a multi-file edit with per-file approval.
@@ -140,9 +154,9 @@ end
 ---@param opts? table Optional overrides
 ---@return nil
 function M.multi_file(opts)
-  opts = opts or {}
-  opts.multi_file = true
-  return M.visual(opts)
+	opts = opts or {}
+	opts.multi_file = true
+	return M.visual(opts)
 end
 
 --- Run a semantic search across the project.
@@ -158,7 +172,7 @@ end
 ---   - additional_prompt: string (skip prompt window, use this directly)
 ---@return nil
 function M.search(opts)
-  return Ops.search.run(configured(), opts)
+	return Ops.search.run(configured(), opts)
 end
 
 --- Run vibe mode: open-ended AI analysis.
@@ -170,7 +184,7 @@ end
 ---   - additional_prompt: string (skip prompt window, use this directly)
 ---@return nil
 function M.vibe(opts)
-  return Ops.vibe.run(configured(), opts)
+	return Ops.vibe.run(configured(), opts)
 end
 
 --- Start a tutorial generation request.
@@ -182,7 +196,7 @@ end
 ---@param opts? table Optional overrides
 ---@return nil
 function M.tutorial(opts)
-  return Ops.tutorial.run(configured(), opts)
+	return Ops.tutorial.run(configured(), opts)
 end
 
 --- Cancel all in-flight requests.
@@ -192,17 +206,17 @@ end
 ---
 ---@return nil
 function M.stop_all_requests()
-  if state then
-    state.tracking:stop_all_requests()
-    vim.notify("Agent-Smith requests cancelled")
-  end
+	if state then
+		state.tracking:stop_all_requests()
+		vim.notify("Agent-Smith requests cancelled")
+	end
 end
 
 --- Clear request history.
 ---
 ---@return nil
 function M.clear_previous_requests()
-  configured().tracking:clear_history()
+	configured().tracking:clear_history()
 end
 
 --- Set the active model for subsequent requests.
@@ -210,14 +224,14 @@ end
 ---@param model string Model identifier (provider-specific)
 ---@return table M For chaining: smith.set_model("x").set_provider(y)
 function M.set_model(model)
-  configured().model = model
-  return M
+	configured().model = model
+	return M
 end
 
 --- Get the current model identifier.
 ---@return string
 function M.get_model()
-  return configured().model
+	return configured().model
 end
 
 --- Set the active provider (also resets model to provider default).
@@ -225,22 +239,22 @@ end
 ---@param provider table A provider from M.Providers
 ---@return table M For chaining
 function M.set_provider(provider)
-  assert(provider, "Unknown provider")
-  configured().provider_override = provider
-  configured().model = provider:_get_default_model()
-  return M
+	assert(provider, "Unknown provider")
+	configured().provider_override = provider
+	configured().model = provider:_get_default_model()
+	return M
 end
 
 --- Get the currently active provider (override or default).
 ---@return table
 function M.get_provider()
-  return configured():active_provider()
+	return configured():active_provider()
 end
 
 --- Get the name of the current provider.
 ---@return string
 function M.get_provider_name()
-  return M.get_provider():_get_provider_name()
+	return M.get_provider():_get_provider_name()
 end
 
 --- View past request history in a selectable list.
@@ -250,17 +264,19 @@ end
 ---
 ---@return nil
 function M.view_logs()
-  local items = configured().tracking.history
-  Select.select(
-    "Request History",
-    vim.tbl_map(function(p) return p.operation .. ": " .. p:summary() end, items),
-    function(index)
-      local p = index and items[index]
-      if p then
-        Window.display_full_screen_message(Logger:logs_by_id(p.xid) or { "No logs for request" })
-      end
-    end
-  )
+	local items = configured().tracking.history
+	Select.select(
+		"Request History",
+		vim.tbl_map(function(p)
+			return p.operation .. ": " .. p:summary()
+		end, items),
+		function(index)
+			local p = index and items[index]
+			if p then
+				Window.display_full_screen_message(Logger:logs_by_id(p.xid) or { "No logs for request" })
+			end
+		end
+	)
 end
 
 --- Show current plugin status.
@@ -271,28 +287,30 @@ end
 --- lualine component. Returns an empty string while no tracked status runs.
 ---@return string
 function M.statusline()
-  return Statusline.component()
+	return Statusline.component()
 end
 
 --- Return whether an Agent-Smith statusline indicator is active.
 ---@return boolean
 function M.statusline_active()
-  return Statusline.is_active()
+	return Statusline.is_active()
 end
 
 function M.info()
-  vim.notify(string.format(
-    "Agent-Smith: %s (%s), %d requests",
-    M.get_provider_name(),
-    M.get_model(),
-    configured().tracking:completed()
-  ))
+	vim.notify(
+		string.format(
+			"Agent-Smith: %s (%s), %d requests",
+			M.get_provider_name(),
+			M.get_model(),
+			configured().tracking:completed()
+		)
+	)
 end
 
 --- Internal: get state singleton (for testing/extensions).
 ---@return table
 function M.__get_state()
-  return state
+	return state
 end
 
 return M
