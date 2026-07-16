@@ -297,7 +297,7 @@ The AI outputs structured blocks: >text
 
 Approval flow:
 1. Each file change opens a "Change Proposal" review window
-2. Header states whether it creates or replaces a file; no change is applied yet
+2. Neogit-inspired panel highlights action, path, content, and controls; no change is applied yet
 3. User presses <CR> (apply), q or Esc (skip), or Q (skip all)
 4. Approved changes are written to disk
 5. Staleness detection warns if file changed during approval
