@@ -249,7 +249,26 @@ Completion sources:                                    *agent-smith-completion-s
 
   `native`    Built-in omnifunc (default, no dependencies)
   `cmp`       nvim-cmp source (requires hrsh7th/nvim-cmp)
-  `blink`     blink.cmp source (requires saghen/blink.compat)
+  `blink`     blink.cmp v1 custom source
+
+Blink configuration: >lua
+  sources = {
+    per_filetype = {
+      ["agent-smith-prompt"] = { "agent_smith" },
+    },
+    providers = {
+      agent_smith = {
+        name = "Agent-Smith",
+        module = "agent-smith.extensions.blink",
+        score_offset = 100,
+      },
+    },
+  }
+<
+
+The source only runs in Agent-Smith prompt buffers. Type `#` for indexed
+SKILL.md files or `@` for indexed project files. Accepting an item inserts
+its reference; submitting the prompt injects the referenced content.
 
 Configuration: >lua
   smith.setup({
