@@ -149,7 +149,8 @@ smith.set_model("provider/model")
 ```
 
 If installed, Telescope and fzf-lua extensions also provide provider and model
-selection pickers. Telescope pickers are available directly as:
+selection pickers. Pi models are discovered with `pi --list-models`. Telescope
+pickers are available directly as:
 
 ```vim
 :Telescope agent_smith providers

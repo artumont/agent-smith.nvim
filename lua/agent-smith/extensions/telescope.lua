@@ -70,12 +70,26 @@ end
 --- Open model selection picker.
 function M.select_model()
   local a = require("agent-smith")
-  a.get_provider():fetch_models(function(models, err)
+  local provider = a.get_provider()
+  if type(provider.fetch_models) ~= "function" then
+    return vim.notify(
+      a.get_provider_name() .. " does not support model listing",
+      vim.log.levels.WARN
+    )
+  end
+
+  local ok, fetch_error = pcall(provider.fetch_models, provider, function(models, err)
     if err then
       return vim.notify(err, vim.log.levels.WARN)
     end
+    if type(models) ~= "table" or #models == 0 then
+      return vim.notify("Provider returned no available models", vim.log.levels.WARN)
+    end
     picker("Agent-Smith Models", models, a.set_model)
   end)
+  if not ok then
+    vim.notify("Failed to list models: " .. tostring(fetch_error), vim.log.levels.ERROR)
+  end
 end
 
 --- Open semantic search results in a fuzzy picker with file preview.

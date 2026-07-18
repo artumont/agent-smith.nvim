@@ -43,7 +43,7 @@ local M = {}
 --- Base provider class. All providers inherit from this.
 --- Implements the make_request() lifecycle. Providers only need to
 --- implement the _build_command, _get_provider_name, and _get_default_model
---- methods.
+--- methods. Providers may override fetch_models() for model discovery.
 local BaseProvider = {}
 BaseProvider.__index = BaseProvider
 
@@ -72,6 +72,12 @@ function BaseProvider:_retrieve_response(context)
   local ok, result = pcall(vim.fn.readfile, context.tmp_file)
   if not ok then return nil end
   return table.concat(result, "\n")
+end
+
+--- Report unsupported model discovery unless a provider overrides this method.
+---@param cb fun(models: string[]|nil, err: string|nil)
+function BaseProvider:fetch_models(cb)
+  cb(nil, self:_get_provider_name() .. " does not support model listing")
 end
 
 --- Build a safe diagnostic message without exposing the user's prompt.
