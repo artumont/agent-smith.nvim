@@ -1,6 +1,6 @@
 *agent-smith.txt*  AI-assisted code editing for Neovim
 
-Author:   artumont
+Author:   Agent-Smith Contributors
 Version:  0.1.0
 License:  MIT
 
@@ -63,7 +63,7 @@ Optional:
 
 With lazy.nvim: >lua
   {
-    "artumont/agent-smith.nvim",
+    "your-username/agent-smith.nvim",
     config = function()
       require("agent-smith").setup()
     end,
@@ -72,7 +72,7 @@ With lazy.nvim: >lua
 
 With packer.nvim: >lua
   use {
-    "artumont/agent-smith.nvim",
+    "your-username/agent-smith.nvim",
     config = function()
       require("agent-smith").setup()
     end,
@@ -81,7 +81,7 @@ With packer.nvim: >lua
 
 Manual installation: >bash
   cd ~/.local/share/nvim/site/pack/plugins/start
-  git clone https://github.com/artumont/agent-smith.nvim.git
+  git clone https://github.com/your-username/agent-smith.nvim.git
 <
 
 ==============================================================================
