@@ -35,7 +35,7 @@ Key features:
 - Multi-provider support (OpenCode, Claude, Cursor, Gemini, Kiro, Pi)
 - Multi-file edits with per-file approval
 - Import detection and routing
-- Semantic search into quickfix list
+- Semantic search with fuzzy Telescope/fzf-lua results and quickfix fallback
 - Custom rules (#SKILL.md) and file references (@path)
 
 The core philosophy is user control: no changes happen without your
@@ -190,7 +190,8 @@ All operations are accessed via Lua functions: >lua
   Multi-file edit with per-file approval.
 
   *:AgentSmithSearch*     |smith.search()|
-  Semantic search into quickfix list.
+  Semantic search with a fuzzy result picker. Uses Telescope or fzf-lua when
+  available and falls back to quickfix.
 
   *:AgentSmithVibe*       |smith.vibe()|
   Sandboxed two-phase agentic workflow.
@@ -524,7 +525,7 @@ Request lifecycle:                                 *agent-smith-lifecycle*
   6. Response received
   7. Parsed and applied:
      - Visual: imports extracted, selection replaced
-     - Search: quickfix list populated
+     - Search: fuzzy location picker opened (quickfix fallback)
      - Multi-file: approval flow per file
 
 Sandboxed Vibe lifecycle:                      *agent-smith-vibe-sandbox*
@@ -591,9 +592,9 @@ Single State singleton holds:
   4. Network connection (if using cloud providers)
   5. Read stderr in the failure notification
 
-Empty quickfix list:                         *agent-smith-error-quickfix*
+No semantic search results:                  *agent-smith-error-quickfix*
 
-  The AI response didn't match the expected format. Try:
+  The AI response didn't match the expected location format. Try:
   1. Rephrase your search query
   2. Use a different model
   3. Check provider logs

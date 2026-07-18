@@ -24,16 +24,22 @@ local M = {}
 --- Parse response text into quickfix entries.
 ---
 ---@param text string The raw AI response
+---@param cwd? string Base directory for relative result paths
 ---@return table[] items Array of quickfix entries
-function M.parse(text)
+function M.parse(text, cwd)
   local items = {}
 
   for line in text:gmatch("[^\r\n]+") do
-    local file, lnum, col, count, note = line:match(
+    local candidate = vim.trim(line):gsub("^[-*]%s+", "")
+    candidate = candidate:gsub("^`", ""):gsub("`$", "")
+    local file, lnum, col, count, note = candidate:match(
       "^(.-):(%d+):(%d+),(%d+),(.+)$"
     )
 
     if file then
+      if cwd and vim.fn.isabsolutepath(file) ~= 1 then
+        file = vim.fs.joinpath(cwd, file)
+      end
       -- Quickfix accepts paths that do not exist yet. Keep those results so a
       -- valid provider response is never reported as "without locations".
       -- This matters for proposed new files returned by agentic workflows.

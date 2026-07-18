@@ -11,7 +11,7 @@
 ---
 --- This provides the same functionality as telescope.lua but
 --- for users who prefer fzf-lua. The pickers are functionally
---- identical.
+--- identical, including fuzzy semantic search results.
 
 local M = {}
 
@@ -56,6 +56,40 @@ function M.select_model()
       },
     })
   end)
+end
+
+--- Open semantic search results in an fzf-lua picker.
+---@param items table[] Parsed quickfix-style search entries
+---@param cb fun(item: table) Called with selected result
+---@return boolean opened Whether fzf-lua was available
+function M.search_results(items, cb)
+  local ok, fzf = pcall(require, "fzf-lua")
+  if not ok then return false end
+
+  local labels = {}
+  local by_label = {}
+  for _, item in ipairs(items) do
+    local label = string.format(
+      "%s:%d:%d  %s",
+      vim.fn.fnamemodify(item.filename, ":."),
+      item.lnum or 1,
+      item.col or 1,
+      item.text or ""
+    )
+    table.insert(labels, label)
+    by_label[label] = item
+  end
+
+  fzf.fzf_exec(labels, {
+    prompt = "Agent-Smith Codebase Search> ",
+    actions = {
+      ["default"] = function(selected)
+        local item = selected and by_label[selected[1]]
+        if item then cb(item) end
+      end,
+    },
+  })
+  return true
 end
 
 return M

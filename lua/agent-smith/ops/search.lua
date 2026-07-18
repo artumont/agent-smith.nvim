@@ -6,8 +6,9 @@
 --- 1. Open prompt window (or use additional_prompt)
 --- 2. Build search instruction with output format
 --- 3. Send to provider asynchronously
---- 4. Parse response into quickfix entries
---- 5. Populate quickfix list
+--- 4. Parse response into location entries
+--- 5. Open results in a Telescope/fzf-lua fuzzy picker
+--- 6. Fall back to quickfix when no fuzzy backend is installed
 ---
 --- Response format:
 --- The AI must output lines like:
@@ -31,6 +32,35 @@ local Statusline = require("agent-smith.statusline")
 
 local M = {}
 
+local function open_result(item)
+  if vim.fn.filereadable(item.filename) ~= 1 then
+    vim.notify("Search result file does not exist: " .. item.filename, vim.log.levels.WARN)
+    return
+  end
+
+  vim.cmd("edit " .. vim.fn.fnameescape(item.filename))
+  pcall(vim.api.nvim_win_set_cursor, 0, {
+    math.max(1, item.lnum or 1),
+    math.max(0, (item.col or 1) - 1),
+  })
+  vim.cmd("normal! zz")
+end
+
+local function open_fuzzy_results(items)
+  local backends = {
+    "agent-smith.extensions.telescope",
+    "agent-smith.extensions.fzf-lua",
+  }
+  for _, module in ipairs(backends) do
+    local ok, backend = pcall(require, module)
+    if ok and backend.search_results then
+      local opened_ok, opened = pcall(backend.search_results, items, open_result)
+      if opened_ok and opened then return true end
+    end
+  end
+  return false
+end
+
 --- Run the search operation.
 ---
 ---@param state table Plugin state
@@ -41,6 +71,7 @@ function M.run(state, opts)
 
   local function send(user)
     local context = Prompt.new(state, "search")
+    context.cwd = vim.fs.root(context.full_path, ".git") or vim.fn.getcwd()
     Statusline.start(context, "Searching Codebase")
     context:start(user, {
       on_complete = function(status, response)
@@ -49,7 +80,7 @@ function M.run(state, opts)
           return vim.notify("Search failed: " .. status, vim.log.levels.ERROR)
         end
 
-        local items = Qfix.parse(response)
+        local items = Qfix.parse(response, context.cwd)
         if #items == 0 then
           return vim.notify("No search results found")
         end
@@ -58,7 +89,13 @@ function M.run(state, opts)
           title = "Agent-Smith Search",
           items = items,
         })
-        vim.cmd("copen")
+        if not open_fuzzy_results(items) then
+          vim.notify(
+            "Fuzzy search picker unavailable; opening quickfix",
+            vim.log.levels.INFO
+          )
+          vim.cmd("copen")
+        end
       end,
     })
   end

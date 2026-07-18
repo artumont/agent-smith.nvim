@@ -81,8 +81,8 @@ Default keymaps:
   `<FILE_CHANGE>` / `<CONTENT>` response format. Each proposed file opens in an
   approval window before it is written.
 
-- **Semantic Search**: Ask a natural-language question and populate the
-  quickfix list with parsed file, line, column, count, and note entries.
+- **Semantic Search**: Ask a natural-language question and fuzzy-filter parsed
+  code locations through Telescope or fzf-lua, with quickfix fallback.
 
 - **Sandboxed Vibe**: Run a two-phase workflow in a temporary project copy.
   The model first returns a plan and editable file scope. After plan approval,
@@ -194,7 +194,7 @@ Agent-Smith does not register `:AgentSmith...` Ex commands. Use the Lua API:
 | `smith.setup(opts?)` | Initialize the plugin |
 | `smith.visual(opts?)` | Edit the visual selection |
 | `smith.multi_file(opts?)` | Request multi-file changes with approval |
-| `smith.search(opts?)` | Search the project and populate quickfix |
+| `smith.search(opts?)` | Search project and open fuzzy location results |
 | `smith.vibe(opts?)` | Run the sandboxed two-phase workflow |
 | `smith.tutorial(opts?)` | Generate a tutorial in a split |
 | `smith.stop_all_requests()` | Cancel in-flight requests |
