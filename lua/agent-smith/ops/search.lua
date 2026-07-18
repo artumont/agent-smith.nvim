@@ -27,6 +27,7 @@
 
 local Prompt = require("agent-smith.prompt")
 local Qfix = require("agent-smith.ops.qfix-helpers")
+local Statusline = require("agent-smith.statusline")
 
 local M = {}
 
@@ -40,8 +41,10 @@ function M.run(state, opts)
 
   local function send(user)
     local context = Prompt.new(state, "search")
+    Statusline.start(context, "Searching Codebase")
     context:start(user, {
       on_complete = function(status, response)
+        Statusline.stop(context)
         if status ~= "success" then
           return vim.notify("Search failed: " .. status, vim.log.levels.ERROR)
         end

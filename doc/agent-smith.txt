@@ -386,7 +386,7 @@ Lua pickers: >lua
 
 Lualine component:                                 *agent-smith-lualine*
 
-Show animated status for active Vibe requests: >lua
+Show animated status for active Agent-Smith requests: >lua
   lualine_x = {
     {
       function() return require("agent-smith").statusline() end,
@@ -395,7 +395,9 @@ Show animated status for active Vibe requests: >lua
   }
 <
 
-The component displays a spinner and `Vibing` while the request runs.
+The component displays a spinner for visual edits, codebase searches, and
+Vibe requests. If no statusline consumer is detected, active request feedback
+falls back to |vim.notify()|.
 
 fzf-lua extension:                                 *agent-smith-fzf-lua-extension*
 

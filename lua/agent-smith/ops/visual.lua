@@ -45,6 +45,7 @@ local Prompt = require("agent-smith.prompt")
 local Imports = require("agent-smith.imports.detector")
 local Multi = require("agent-smith.ops.multi-file")
 local Response = require("agent-smith.ops.response")
+local Statusline = require("agent-smith.statusline")
 
 local M = {}
 
@@ -75,14 +76,14 @@ function M.run(state, opts)
       if not start_row then
         return vim.notify("Agent-Smith: visual selection is no longer valid", vim.log.levels.WARN)
       end
-      local Status = require("agent-smith.window.status-window")
-      local top_status = Status.new("Implementing", {
+      local InlineStatus = require("agent-smith.window.status-window")
+      local top_status = InlineStatus.new("Implementing", {
         buffer = context.buffer,
         row = start_row,
         col = 0,
         above = true,
       })
-      local bottom_status = Status.new("Implementing", {
+      local bottom_status = InlineStatus.new("Implementing", {
         buffer = context.buffer,
         row = end_row,
         col = 0,
@@ -90,6 +91,7 @@ function M.run(state, opts)
       })
       top_status:start()
       bottom_status:start()
+      Statusline.start(context, "Implementing")
 
       context:start(user, {
         on_stdout = function(line)
@@ -99,6 +101,7 @@ function M.run(state, opts)
         on_complete = function(status, response)
           top_status:stop()
           bottom_status:stop()
+          Statusline.stop(context)
 
           if status ~= "success" then
             local details = vim.trim(response or "")

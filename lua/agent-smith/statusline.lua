@@ -9,6 +9,7 @@ local interval = 70
 local active = {}
 local frame = 1
 local ticking = false
+local has_consumer = false
 
 local M = {}
 
@@ -40,6 +41,14 @@ function M.start(context, label)
     tick()
   end
   redraw()
+
+  -- Give configured statusline components one redraw cycle to consume the
+  -- activity. Without a consumer, retain visible feedback through vim.notify.
+  vim.defer_fn(function()
+    if active[context.xid] == label and not has_consumer then
+      vim.notify("Agent-Smith: " .. label .. "…", vim.log.levels.INFO)
+    end
+  end, 100)
 end
 
 --- Stop displaying status for a request.
@@ -65,6 +74,7 @@ end
 --- Return status text for a lualine component.
 ---@return string
 function M.component()
+  has_consumer = true
   local _, label = next(active)
   if not label then return "" end
   local text = string.format("%s %s", frames[frame], label)
@@ -74,6 +84,7 @@ end
 --- Return current optional accent color for statusline integrations.
 ---@return table|nil color Lualine-compatible color table
 function M.color()
+  has_consumer = true
   if not UI.enabled() then return nil end
   return { fg = UI.gradient_color(frame) }
 end
@@ -81,6 +92,7 @@ end
 --- Return whether any Agent-Smith request has a statusline indicator.
 ---@return boolean
 function M.is_active()
+  has_consumer = true
   return next(active) ~= nil
 end
 

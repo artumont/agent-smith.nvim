@@ -118,8 +118,9 @@ Default keymaps:
 - **Request History**: Browse completed request logs with
   `smith.view_logs()`.
 
-- **Statusline Component**: Expose the active request spinner and label through
-  `smith.statusline()` and `smith.statusline_active()` for statusline plugins.
+- **Statusline Activity**: Visual edits, codebase searches, and Vibe requests
+  expose an active spinner through `smith.statusline()`. When no statusline
+  consumer is detected, activity falls back to `vim.notify`.
 
 ## Providers
 
@@ -222,7 +223,8 @@ Optional integrations:
 - **Telescope**: Provider and model selection pickers.
 - **fzf-lua**: Provider and model selection pickers.
 - **Worker**: Track a work item and search or Vibe against remaining work.
-- **Lualine**: Display `smith.statusline()` while requests are active.
+- **Lualine**: Display visual edit, codebase search, and Vibe activity through
+  `smith.statusline()`. Without a statusline consumer, `vim.notify` is used.
 
 Example lualine component:
 
