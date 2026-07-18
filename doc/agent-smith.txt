@@ -1,6 +1,6 @@
 *agent-smith.txt*  AI-assisted code editing for Neovim
 
-Author:   Agent-Smith Contributors
+Author:   artumont
 Version:  0.1.0
 License:  MIT
 
@@ -63,7 +63,7 @@ Optional:
 
 With lazy.nvim: >lua
   {
-    "your-username/agent-smith.nvim",
+    "artumont/agent-smith.nvim",
     config = function()
       require("agent-smith").setup()
     end,
@@ -72,7 +72,7 @@ With lazy.nvim: >lua
 
 With packer.nvim: >lua
   use {
-    "your-username/agent-smith.nvim",
+    "artumont/agent-smith.nvim",
     config = function()
       require("agent-smith").setup()
     end,
@@ -81,7 +81,7 @@ With packer.nvim: >lua
 
 Manual installation: >bash
   cd ~/.local/share/nvim/site/pack/plugins/start
-  git clone https://github.com/your-username/agent-smith.nvim.git
+  git clone https://github.com/artumont/agent-smith.nvim.git
 <
 
 ==============================================================================
@@ -141,6 +141,9 @@ Switching providers: >lua
     require("agent-smith.extensions.telescope").select_provider()
   end)
 <
+Or from the command line: >vim
+  :Telescope agent_smith providers
+<
 
 Switching models: >lua
   -- At runtime
@@ -150,6 +153,9 @@ Switching models: >lua
   vim.keymap.set("n", "<leader>am", function()
     require("agent-smith.extensions.telescope").select_model()
   end)
+<
+Or from the command line: >vim
+  :Telescope agent_smith models
 <
 
 Adding a custom provider:                               *agent-smith-custom-provider*
@@ -363,7 +369,12 @@ Track work items for iterative development: >lua
 
 Telescope extension:                             *agent-smith-telescope-extension*
 
-Model and provider selection pickers: >lua
+Command-line pickers: >vim
+  :Telescope agent_smith providers
+  :Telescope agent_smith models
+<
+
+Lua pickers: >lua
   vim.keymap.set("n", "<leader>am", function()
     require("agent-smith.extensions.telescope").select_model()
   end)
