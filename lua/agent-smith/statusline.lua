@@ -75,8 +75,29 @@ end
 ---@return string
 function M.component()
   has_consumer = true
-  local _, label = next(active)
+  -- Prefer visual work so queued edit count remains visible when another
+  -- Agent-Smith operation is also active.
+  local label
+  for _, active_label in pairs(active) do
+    if active_label == "Implementing" then
+      label = active_label
+      break
+    end
+  end
+  if not label then
+    local _, first_label = next(active)
+    label = first_label
+  end
   if not label then return "" end
+
+  local count = 0
+  for _, active_label in pairs(active) do
+    if active_label == label then count = count + 1 end
+  end
+  if label == "Implementing" then
+    label = string.format("Implementing (%d)", count)
+  end
+
   local text = string.format("%s %s", frames[frame], label)
   return UI.enabled() and gradient_text(text) or text
 end

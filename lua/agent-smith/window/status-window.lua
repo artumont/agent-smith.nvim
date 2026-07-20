@@ -37,7 +37,13 @@ function M:_render()
   if not self.running or not vim.api.nvim_buf_is_valid(self.buffer) then return end
 
   local line_count = vim.api.nvim_buf_line_count(self.buffer)
-  local row = math.max(0, math.min(self.row, line_count - 1))
+  local row = self.row
+  if self.extmark then
+    local position = vim.api.nvim_buf_get_extmark_by_id(self.buffer, namespace, self.extmark, {})
+    if #position > 0 then row = position[1] end
+  end
+  row = math.max(0, math.min(row, line_count - 1))
+  self.row = row
   local text = string.format("%s %s", frames[self.frame], self.label)
   local chunks = {}
   if UI.enabled() then

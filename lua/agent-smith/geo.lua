@@ -23,15 +23,15 @@
 ---   them in Prompt.new() which is called right after the user presses
 ---   Esc from visual mode. If you delay the capture, the marks may
 ---   point to wrong positions.
---- - Buffer modification during request: If the buffer is modified while
----   a request is in flight, the marks may become invalid or point to
----   different text. The plugin doesn't guard against this - it's the
----   user's responsibility to not modify the selection during a request.
+--- - Buffer modification during request: Extmark anchors follow edits made by
+---   earlier queued requests. User edits can still change selected text before
+---   its request starts.
 --- - Cross-buffer operations: Range:replace_text() assumes the buffer
 ---   is still valid. If the buffer is unloaded (e.g., :bdelete), the
 ---   call will fail.
 
 local M = {}
+local range_namespace = vim.api.nvim_create_namespace("agent-smith.visual-ranges")
 
 --- A single position in a buffer.
 local Point = {}
@@ -70,12 +70,26 @@ function Range.new(buffer, start_, end_, visual_mode)
   if start_.line > end_.line or (start_.line == end_.line and start_.col > end_.col) then
     start_, end_ = end_, start_
   end
-  return setmetatable({
+  local self = setmetatable({
     buffer = buffer,
     start = start_,
     end_ = end_,
     visual_mode = visual_mode,
   }, Range)
+
+  -- Anchors move when an earlier queued edit changes this buffer. The start
+  -- stays before inserted text; the exclusive end stays after it.
+  if vim.api.nvim_buf_is_valid(buffer) then
+    local end_line = vim.api.nvim_buf_get_lines(buffer, end_.line - 1, end_.line, false)[1] or ""
+    self.start_anchor = vim.api.nvim_buf_set_extmark(
+      buffer, range_namespace, start_.line - 1, start_.col, { right_gravity = false }
+    )
+    self.end_anchor = vim.api.nvim_buf_set_extmark(
+      buffer, range_namespace, end_.line - 1, math.min(#end_line, end_.col + 1), { right_gravity = true }
+    )
+  end
+
+  return self
 end
 
 --- Capture the current visual selection as a Range.
@@ -124,11 +138,11 @@ end
 --- Get a string representation of the range (for prompts).
 ---@return string e.g., "10:5-15:20"
 function Range:to_string()
-  return string.format(
-    "%d:%d-%d:%d",
-    self.start.line, self.start.col,
-    self.end_.line, self.end_.col
-  )
+  local start_row, start_col, end_row, end_col = self:_api_positions()
+  if start_row then
+    return string.format("%d:%d-%d:%d", start_row + 1, start_col, end_row + 1, end_col - 1)
+  end
+  return string.format("%d:%d-%d:%d", self.start.line, self.start.col, self.end_.line, self.end_.col)
 end
 
 --- Return normalized API positions or nil for an invalid visual selection.
@@ -143,20 +157,25 @@ function Range:_api_positions()
   if not vim.api.nvim_buf_is_valid(self.buffer) then return nil end
 
   local line_count = vim.api.nvim_buf_line_count(self.buffer)
-  if self.start.line < 1 or self.end_.line < 1 or line_count == 0 then return nil end
+  if line_count == 0 then return nil end
 
-  local start_row = math.min(self.start.line, self.end_.line) - 1
-  local end_row = math.max(self.start.line, self.end_.line) - 1
-  if start_row >= line_count then return nil end
-  end_row = math.min(end_row, line_count - 1)
-
-  local start_col = self.start.col
-  local end_col = self.end_.col
-  if self.start.line > self.end_.line then
-    start_col, end_col = end_col, start_col
-  elseif start_row == end_row and start_col > end_col then
-    start_col, end_col = end_col, start_col
+  local start_row, start_col = self.start.line - 1, self.start.col
+  local end_row, end_exclusive = self.end_.line - 1, self.end_.col + 1
+  if self.start_anchor and self.end_anchor then
+    local start = vim.api.nvim_buf_get_extmark_by_id(self.buffer, range_namespace, self.start_anchor, {})
+    local finish = vim.api.nvim_buf_get_extmark_by_id(self.buffer, range_namespace, self.end_anchor, {})
+    if #start == 0 or #finish == 0 then return nil end
+    start_row, start_col = start[1], start[2]
+    end_row, end_exclusive = finish[1], finish[2]
   end
+  if start_row >= line_count or end_row >= line_count then return nil end
+
+  if start_row > end_row or (start_row == end_row and start_col > end_exclusive) then
+    start_row, end_row = end_row, start_row
+    start_col, end_exclusive = end_exclusive, start_col
+  end
+
+  local end_col = end_exclusive - 1
 
   -- Linewise visual selections cover complete first and last lines.
   if self.visual_mode == "V" then
@@ -170,10 +189,23 @@ function Range:_api_positions()
   end_col = math.max(0, math.min(end_col, #end_line - 1))
 
   -- `end_col` is inclusive in visual marks; Neovim APIs require exclusive.
-  local end_exclusive = math.min(#end_line, end_col + 1)
+  end_exclusive = math.min(#end_line, end_col + 1)
   if start_row == end_row and start_col > end_exclusive then return nil end
 
   return start_row, start_col, end_row, end_exclusive
+end
+
+--- Remove anchors after request completes.
+function Range:clear()
+  if not vim.api.nvim_buf_is_valid(self.buffer) then return end
+  if self.start_anchor then
+    pcall(vim.api.nvim_buf_del_extmark, self.buffer, range_namespace, self.start_anchor)
+  end
+  if self.end_anchor then
+    pcall(vim.api.nvim_buf_del_extmark, self.buffer, range_namespace, self.end_anchor)
+  end
+  self.start_anchor = nil
+  self.end_anchor = nil
 end
 
 --- Get the text content of the range.

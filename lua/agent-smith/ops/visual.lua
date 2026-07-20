@@ -37,14 +37,14 @@
 --- - Provider errors: Provider failures (non-zero exit, crashes) result
 ---   in "failed" status. We show an error notification and do not modify
 ---   the buffer.
---- - Concurrent edits: If the user starts another edit while one is in
----   flight, both may try to modify the same buffer. This is a known
----   limitation. The user can cancel the first edit before starting a new one.
+--- - Concurrent edits: Requests for same buffer run FIFO. Their selection
+---   anchors move with earlier edits, so each response applies in order.
 
 local Prompt = require("agent-smith.prompt")
 local Imports = require("agent-smith.imports.detector")
 local Multi = require("agent-smith.ops.multi-file")
 local Response = require("agent-smith.ops.response")
+local Queue = require("agent-smith.ops.visual-queue")
 local Statusline = require("agent-smith.statusline")
 
 local M = {}
@@ -60,6 +60,7 @@ function M.run(state, opts)
 
   -- Guard: must have a visual selection
   if not context.range or context.range:to_text() == "" then
+    if context.range then context.range:clear() end
     vim.notify("Agent-Smith: select code first", vim.log.levels.WARN)
     return
   end
@@ -67,7 +68,10 @@ function M.run(state, opts)
   -- Open prompt window and wait for user input
   require("agent-smith.window.prompt-window").capture("Visual", {
     cb = function(ok, user)
-      if not ok or vim.trim(user) == "" then return end
+      if not ok or vim.trim(user) == "" then
+        context.range:clear()
+        return
+      end
 
       -- Bracket the selection with inline status lines, like 99. The top
       -- extmark renders above the first selected row; the bottom one renders
@@ -93,68 +97,65 @@ function M.run(state, opts)
       bottom_status:start()
       Statusline.start(context, "Implementing")
 
-      context:start(user, {
-        on_stdout = function(line)
-          top_status:push(line)
-          bottom_status:push(line)
-        end,
-        on_complete = function(status, response)
-          top_status:stop()
-          bottom_status:stop()
-          Statusline.stop(context)
+      -- Keep status visible for queued work too. Statusline counts all visual
+      -- requests as "Implementing (n)" while this buffer drains FIFO.
+      Queue.enqueue(context.buffer, function(done)
+        context:start(user, {
+          on_stdout = function(line)
+            top_status:push(line)
+            bottom_status:push(line)
+          end,
+          on_complete = function(status, response)
+            local function finish()
+              top_status:stop()
+              bottom_status:stop()
+              Statusline.stop(context)
+              context.range:clear()
+              done()
+            end
 
-          if status ~= "success" then
-            local details = vim.trim(response or "")
-            local message = "Agent-Smith request " .. status
-            if details ~= "" then message = message .. ":\n" .. details end
-            return vim.notify(message, vim.log.levels.ERROR)
-          end
+            if status ~= "success" then
+              local details = vim.trim(response or "")
+              local message = "Agent-Smith request " .. status
+              if details ~= "" then message = message .. ":\n" .. details end
+              vim.notify(message, vim.log.levels.ERROR)
+              return finish()
+            end
 
-          -- Multi-file mode: parse and present each file change
-          if opts.multi_file then
-            local changes = Multi.parse(response)
-            if #changes == 0 then
-              return vim.notify(
-                "No valid multi-file changes returned",
+            -- Multi-file mode: wait for approval before next same-buffer job.
+            if opts.multi_file then
+              local changes = Multi.parse(response)
+              if #changes == 0 then
+                vim.notify("No valid multi-file changes returned", vim.log.levels.WARN)
+                return finish()
+              end
+              return Multi.approve_all(changes, function(applied, total)
+                vim.notify(string.format("Applied %d of %d file changes", applied, total))
+                finish()
+              end)
+            end
+
+            if vim.trim(response) == "" then
+              vim.notify("Agent-Smith returned empty response", vim.log.levels.WARN)
+              return finish()
+            end
+
+            -- Models sometimes ignore code-only rule and emit ```lua fences.
+            response = Response.unwrap_code_fence(response)
+            local ft = vim.bo[context.buffer].filetype
+            local imports, body = Imports.extract(response, ft)
+            Imports.insert(context.buffer, imports, ft)
+
+            if not context.range:replace_text(body) then
+              vim.notify(
+                "Agent-Smith: selection changed before response arrived; edit was not applied",
                 vim.log.levels.WARN
               )
             end
-            return Multi.approve_all(changes, function(applied, total)
-              vim.notify(
-                string.format("Applied %d of %d file changes", applied, total)
-              )
-            end)
-          end
-
-          -- Single-file mode: replace visual selection
-          if vim.trim(response) == "" then
-            return vim.notify(
-              "Agent-Smith returned empty response",
-              vim.log.levels.WARN
-            )
-          end
-
-          -- Models sometimes ignore the code-only rule and emit ```lua fences.
-          -- Remove a complete outer fence before import detection or replacement.
-          response = Response.unwrap_code_fence(response)
-
-          -- Extract imports and code body
-          local ft = vim.bo[context.buffer].filetype
-          local imports, body = Imports.extract(response, ft)
-
-          -- Insert imports at file's import section
-          Imports.insert(context.buffer, imports, ft)
-
-          -- Replace the visual selection with the code body. Marks can become
-          -- invalid if the buffer changed while the request was running.
-          if not context.range:replace_text(body) then
-            vim.notify(
-              "Agent-Smith: selection changed before response arrived; edit was not applied",
-              vim.log.levels.WARN
-            )
-          end
-        end,
-      })
+            finish()
+          end,
+        })
+      end)
     end,
   })
 end
