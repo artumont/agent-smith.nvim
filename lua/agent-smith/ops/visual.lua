@@ -140,18 +140,48 @@ function M.run(state, opts)
               return finish()
             end
 
-            -- Models sometimes ignore code-only rule and emit ```lua fences.
-            response = Response.unwrap_code_fence(response)
-            local ft = vim.bo[context.buffer].filetype
-            local imports, body = Imports.extract(response, ft)
-            Imports.insert(context.buffer, imports, ft)
+            -- Normalize fenced output defensively. Malformed or empty fenced
+            -- responses must never replace the selection.
+            local normalized, validation_error = Response.normalize_replacement(response)
+            if not normalized then
+              vim.notify(
+                "Agent-Smith rejected provider response: " .. validation_error,
+                vim.log.levels.WARN
+              )
+              return finish()
+            end
 
+            local ft = vim.bo[context.buffer].filetype
+            local imports, body = Imports.extract(normalized, ft)
+            local body_text = table.concat(body, "\n")
+            if vim.trim(body_text) == "" then
+              vim.notify("Agent-Smith rejected empty replacement", vim.log.levels.WARN)
+              return finish()
+            end
+
+            local selected_text = context.range:to_text()
+            if selected_text == "" then
+              vim.notify(
+                "Agent-Smith: selection changed before response arrived; edit was not applied",
+                vim.log.levels.WARN
+              )
+              return finish()
+            end
+
+            if body_text == selected_text and #imports == 0 then
+              vim.notify("Agent-Smith returned no changes", vim.log.levels.INFO)
+              return finish()
+            end
+
+            -- Replace first so a stale range cannot leave import-only changes.
             if not context.range:replace_text(body) then
               vim.notify(
                 "Agent-Smith: selection changed before response arrived; edit was not applied",
                 vim.log.levels.WARN
               )
+              return finish()
             end
+            Imports.insert(context.buffer, imports, ft)
             finish()
           end,
         })
