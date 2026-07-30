@@ -1,11 +1,26 @@
-local Base = require("agent-smith.providers").BaseProvider; local P = setmetatable({}, { __index = Base })
+local Base = require("agent-smith.providers").BaseProvider
+local P = setmetatable({}, { __index = Base })
+
+local VISUAL_SYSTEM_PROMPT = [[You are a bounded read-only code assistant.
+Follow the request's output contract exactly. Never edit, write, create, delete,
+or rename files; Agent-Smith alone applies returned changes.]]
+
 function P:_get_provider_name() return "Pi" end
 -- Empty model means omit --model and let Pi use its configured default.
 function P:_get_default_model() return "" end
 function P:_build_command(q, c)
   local command = { "pi", "--print", "--no-session" }
+  if c.operation == "visual" then
+    -- Prompt rules alone cannot stop an agent from calling mutating tools. Keep
+    -- visual edits read-only; Agent-Smith applies returned replacement text.
+    vim.list_extend(command, {
+      "--tools", "read,grep,find,ls",
+      "--system-prompt", VISUAL_SYSTEM_PROMPT,
+    })
+  end
   if c.model and c.model ~= "" then vim.list_extend(command, { "--model", c.model }) end
-  table.insert(command, q); return command
+  table.insert(command, q)
+  return command
 end
 
 local function parse_models(output)
