@@ -46,6 +46,9 @@ assert(
 )
 local progress_win = Progress.open({ tracking = tracking })
 assert(progress_win and vim.api.nvim_win_is_valid(progress_win), "progress window did not open")
+local progress_buf = vim.api.nvim_win_get_buf(progress_win)
+local progress_marks = vim.api.nvim_buf_get_extmarks(progress_buf, -1, 0, -1, { details = true })
+assert(#progress_marks >= 4, "progress controls were not highlighted")
 vim.api.nvim_win_close(progress_win, true)
 
 local first_done

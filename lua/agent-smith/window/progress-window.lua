@@ -3,6 +3,16 @@
 local M = {}
 
 local timer_interval = 250
+local controls_namespace = vim.api.nvim_create_namespace("agent-smith.progress.controls")
+
+local function highlight_control(buf, line, token)
+  local start = line:find(token, 1, true)
+  if not start then return end
+  vim.api.nvim_buf_set_extmark(buf, controls_namespace, 1, start - 1, {
+    end_col = start - 1 + #token,
+    hl_group = "WarningMsg",
+  })
+end
 
 local function elapsed(prompt)
   local seconds = math.floor((vim.uv.hrtime() - prompt.started_at) / 1000000000)
@@ -71,7 +81,13 @@ function M.open(state)
   local function render()
     if not vim.api.nvim_buf_is_valid(buf) then return end
     vim.bo[buf].modifiable = true
-    vim.api.nvim_buf_set_lines(buf, 0, -1, false, M.lines(tracking))
+    local lines = M.lines(tracking)
+    vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+    vim.api.nvim_buf_clear_namespace(buf, controls_namespace, 0, -1)
+    highlight_control(buf, lines[2], "q")
+    highlight_control(buf, lines[2], "Esc")
+    highlight_control(buf, lines[2], "r")
+    highlight_control(buf, lines[2], "x")
     vim.bo[buf].modifiable = false
   end
   local function close()
