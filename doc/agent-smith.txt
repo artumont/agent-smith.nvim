@@ -45,7 +45,7 @@ explicit action.
 ==============================================================================
 2. Requirements                                   *agent-smith-requirements*
 
-- Neovim >= 0.9
+- Neovim >= 0.10
 - One supported AI CLI in PATH:
   - opencode (https://opencode.ai)
   - claude (https://claude.ai)

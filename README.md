@@ -257,7 +257,7 @@ Example lualine component:
 
 ## Requirements
 
-- Neovim >= 0.9
+- Neovim >= 0.10
 - One supported AI CLI available in `$PATH`
 - Optional on Linux: Bubblewrap (`bwrap`) for read-only original-project mount
 - Optional: `nvim-cmp`, `blink.cmp`, Telescope, or fzf-lua for integrations
@@ -265,6 +265,10 @@ Example lualine component:
 ## Tests
 
 ```sh
-nvim --headless -u NONE -l tests/sandbox.lua
-nvim --headless -u NONE -l tests/progress.lua
+./tests/run.sh
 ```
+
+Suite covers public API delegation, Vibe plan/approval/execution, inline visual
+edits, codebase search, tutorial display, sandbox/provider lifecycle, progress
+UI, parsers, filesystem helpers, and provider adapter commands. Real provider
+CLIs and optional picker integrations remain mocked at operation boundaries.
