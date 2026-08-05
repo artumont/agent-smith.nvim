@@ -153,7 +153,40 @@ if vim.fn.executable("setsid") == 1 then
   assert(plan_status == "success", "plan terminator status was " .. tostring(plan_status))
   assert(plan_response:find("</PLAN>", 1, true), "plan terminator response was truncated")
   assert((vim.uv.hrtime() - plan_started) / 1e6 < 1500, "plan waited for CLI shutdown")
+
+  local idle_provider = setmetatable({}, { __index = Base })
+  function idle_provider:_get_provider_name() return "idle-test" end
+  function idle_provider:_build_command()
+    return { "sh", "-c", "printf 'Created hello.md'; sleep 10" }
+  end
+  local idle_done = false
+  local idle_status, idle_response
+  local idle_started = vim.uv.hrtime()
+  local idle_context = {
+    cwd = temp_root,
+    tmp_file = vim.fs.joinpath(temp_root, ".idle-response"),
+    model = "",
+    response_idle_timeout_ms = 100,
+    _state = state,
+    is_cancelled = function() return false end,
+    _set_process = function(self, proc) self.proc = proc end,
+  }
+  idle_provider:make_request("test", idle_context, {
+    on_start = function() end,
+    on_stdout = function() end,
+    on_stderr = function() end,
+    on_complete = function(status, response)
+      idle_status, idle_response, idle_done = status, response, true
+    end,
+  })
+  assert(vim.wait(1500, function() return idle_done end), "idle response request timed out")
+  assert(idle_status == "success", "idle response status was " .. tostring(idle_status))
+  assert(idle_response == "Created hello.md", "idle response content changed")
+  assert((vim.uv.hrtime() - idle_started) / 1e6 < 1500, "idle response waited for CLI shutdown")
 end
+
+local execute_prompt = require("agent-smith.prompts").vibe_execute("plan", { "hello.md" })
+assert(execute_prompt:find("</VIBE_DONE>", 1, true), "Vibe execution prompt lacks completion marker")
 
 local failed_source = vim.fs.joinpath(project, "copy-failure.txt")
 write(failed_source, "secret")

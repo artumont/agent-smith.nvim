@@ -59,7 +59,14 @@ local function request_context(state, session, instruction, progress, phase)
   context.file_reference = session.current_relative or "."
   context.instruction = instruction
   context.vibe_phase = phase
-  if phase == "plan" then context.response_terminator = "</PLAN>" end
+  if phase == "plan" then
+    context.response_terminator = "</PLAN>"
+  elseif phase == "execute" then
+    context.response_terminator = "</VIBE_DONE>"
+    -- Compatibility fallback for providers that ignore VIBE_DONE but print a
+    -- final summary and keep helper processes alive.
+    context.response_idle_timeout_ms = 2000
+  end
   context:set_progress(progress)
   return context
 end

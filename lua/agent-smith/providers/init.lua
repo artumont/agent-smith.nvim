@@ -163,8 +163,8 @@ end
 --- agent CLIs print their final response but keep helper processes or pipes
 --- alive; killing the group closes those handles without leaking children.
 local function process_group_command(command, context)
-  if not context.response_terminator or vim.fn.has("win32") == 1
-    or vim.fn.executable("setsid") ~= 1 then
+  if (not context.response_terminator and not context.response_idle_timeout_ms)
+    or vim.fn.has("win32") == 1 or vim.fn.executable("setsid") ~= 1 then
     return command
   end
   context._provider_process_group = true
@@ -197,7 +197,9 @@ end
 function BaseProvider:make_request(query, context, observer)
   observer.on_start()
 
+  local finished = false
   local once_complete = once(function(status, text)
+    finished = true
     observer.on_complete(status, text)
   end)
 
@@ -218,6 +220,23 @@ function BaseProvider:make_request(query, context, observer)
   local stderr = {}
   local early_response
   local process
+  local activity_generation = 0
+
+  local function schedule_idle_completion()
+    local timeout = context.response_idle_timeout_ms
+    if not timeout then return end
+    activity_generation = activity_generation + 1
+    local generation = activity_generation
+    vim.defer_fn(function()
+      if finished or early_response or context:is_cancelled()
+        or generation ~= activity_generation then return end
+      local response = table.concat(stdout, "")
+      if vim.trim(response) == "" then return end
+      early_response = response
+      terminate_process(context, process)
+    end, timeout)
+  end
+
   local ok, proc = pcall(
     vim.system,
     command,
@@ -239,6 +258,7 @@ function BaseProvider:make_request(query, context, observer)
               terminate_process(context, process)
             end
           end
+          schedule_idle_completion()
         end
       end),
       stderr = vim.schedule_wrap(function(err, data)
@@ -247,6 +267,7 @@ function BaseProvider:make_request(query, context, observer)
         if data then
           table.insert(stderr, data)
           observer.on_stderr(data)
+          schedule_idle_completion()
         end
       end),
     },

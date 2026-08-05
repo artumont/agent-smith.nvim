@@ -162,10 +162,15 @@ Rules:
 - Work only inside the current sandbox directory
 - Modify only approved editable files
 - Do not access or modify the original repository
-- For analysis-only plans, do not write files and return location lines as:
+- For analysis-only plans, do not write files and return location lines inside
+  the VIBE_DONE block as:
   /absolute/sandbox/path:line:column,line_count,Brief note
 - For editing plans, use tools to edit sandbox files directly
-- When complete, return a concise plain-text summary]], scope, plan)
+- When complete, return ONLY this structure:
+  <VIBE_DONE>
+  Concise summary of completed work
+  </VIBE_DONE>
+- Do not omit the closing VIBE_DONE tag]], scope, plan)
 end
 
 --- Build the multi-file edit prompt.
