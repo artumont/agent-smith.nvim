@@ -176,9 +176,15 @@ assert(cancel_elapsed_ms >= 350, "cancel completed before process exit")
 
 local pi = require("agent-smith.providers.pi")
 local pi_search = table.concat(pi:_build_command("q", { operation = "search", model = "" }), " ")
-local pi_vibe = table.concat(pi:_build_command("q", { operation = "vibe", model = "" }), " ")
+local pi_plan = table.concat(pi:_build_command("q", {
+  operation = "vibe", vibe_phase = "plan", model = "",
+}), " ")
+local pi_vibe = table.concat(pi:_build_command("q", {
+  operation = "vibe", vibe_phase = "execute", model = "",
+}), " ")
 assert(pi_search:find("--tools read,grep,find,ls", 1, true), "Pi search is not read-only")
-assert(not pi_vibe:find("--tools", 1, true), "Pi Vibe cannot edit sandbox")
+assert(pi_plan:find("--tools read,grep,find,ls", 1, true), "Pi Vibe plan is not read-only")
+assert(not pi_vibe:find("--tools", 1, true), "Pi Vibe execution cannot edit sandbox")
 
 local opencode = require("agent-smith.providers.opencode")
 local oc_search = table.concat(opencode:_build_command("q", {

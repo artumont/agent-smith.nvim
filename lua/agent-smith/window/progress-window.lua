@@ -5,12 +5,13 @@ local M = {}
 local timer_interval = 250
 local controls_namespace = vim.api.nvim_create_namespace("agent-smith.progress.controls")
 
-local function highlight_control(buf, line, token)
+local function highlight_control(buf, row, line, token)
+	if type(line) ~= "string" then return end
 	local start = line:find(token, 1, true)
 	if not start then
 		return
 	end
-	vim.api.nvim_buf_set_extmark(buf, controls_namespace, 1, start - 1, {
+	vim.api.nvim_buf_set_extmark(buf, controls_namespace, row, start - 1, {
 		end_col = start - 1 + #token,
 		hl_group = "WarningMsg",
 	})
@@ -89,10 +90,11 @@ function M.open(state)
 		local lines = M.lines(tracking)
 		vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 		vim.api.nvim_buf_clear_namespace(buf, controls_namespace, 0, -1)
-		highlight_control(buf, lines[0], "q")
-		highlight_control(buf, lines[0], "Esc")
-		highlight_control(buf, lines[0], "r")
-		highlight_control(buf, lines[0], "x")
+		local control_line = lines[1] or ""
+		highlight_control(buf, 0, control_line, "q")
+		highlight_control(buf, 0, control_line, "Esc")
+		highlight_control(buf, 0, control_line, "r")
+		highlight_control(buf, 0, control_line, "x")
 		vim.bo[buf].modifiable = false
 	end
 	local function close()

@@ -47,7 +47,7 @@ local function configure_results_window()
   end
 end
 
-local function request_context(state, session, instruction, progress)
+local function request_context(state, session, instruction, progress, phase)
   local context = Prompt.new(state, "vibe")
   context.cwd = session.root
   context.full_path = session.current_file
@@ -58,6 +58,7 @@ local function request_context(state, session, instruction, progress)
   -- can trigger external-directory permission checks in agent harnesses.
   context.file_reference = session.current_relative or "."
   context.instruction = instruction
+  context.vibe_phase = phase
   context:set_progress(progress)
   return context
 end
@@ -88,7 +89,8 @@ local function execute_plan(state, session, user, plan)
     state,
     session,
     Prompts.vibe_execute(plan.raw, plan.files),
-    "Executing Vibe"
+    "Executing Vibe",
+    "execute"
   )
   Statusline.start(context, "Executing Vibe")
   context:start(user, {
@@ -128,7 +130,7 @@ local function start_session(state, user)
     return
   end
 
-  local context = request_context(state, session, Prompts.vibe_plan(), "Planning Vibe")
+  local context = request_context(state, session, Prompts.vibe_plan(), "Planning Vibe", "plan")
   Statusline.start(context, "Planning Vibe")
   context:start(user, {
     on_complete = function(status, response)

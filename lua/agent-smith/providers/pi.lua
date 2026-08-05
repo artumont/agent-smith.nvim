@@ -10,9 +10,10 @@ function P:_get_provider_name() return "Pi" end
 function P:_get_default_model() return "" end
 function P:_build_command(q, c)
   local command = { "pi", "--print", "--no-session" }
-  if c.operation ~= "vibe" then
+  if c.operation ~= "vibe" or c.vibe_phase == "plan" then
     -- Prompt rules alone cannot stop an agent from calling mutating tools.
-    -- Non-Vibe operations consume text responses; Agent-Smith applies changes.
+    -- Planning and non-Vibe operations consume text responses; Agent-Smith
+    -- applies changes after the plan is approved.
     vim.list_extend(command, {
       "--tools", "read,grep,find,ls",
       "--system-prompt", READ_ONLY_SYSTEM_PROMPT,

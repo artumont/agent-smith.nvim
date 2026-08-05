@@ -98,7 +98,10 @@ end
 ---@param text string
 function M:push_output(text)
 	for line in text:gmatch("[^\r\n]+") do
-		table.insert(self.output, line)
+		line = vim.trim(line):gsub("\27%[[%d;]*m", "")
+		if line ~= "" then
+			table.insert(self.output, vim.fn.strcharpart(line, 0, 200))
+		end
 	end
 	while #self.output > 6 do table.remove(self.output, 1) end
 	self.updated_at = vim.uv.hrtime()
@@ -275,7 +278,11 @@ function M:start(user_prompt, observer)
 				observer.on_stdout(line)
 			end
 		end,
-		on_stderr = function(_) end,
+		on_stderr = function(line)
+			-- Provider CLIs often report permission prompts, tool activity, and
+			-- progress on stderr. Keep it visible in the progress view.
+			self:push_output(line)
+		end,
 		on_complete = function(status, response)
 			self:set_progress(status == "success" and "Finished" or status)
 			if self._sandbox then
