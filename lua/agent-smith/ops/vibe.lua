@@ -47,14 +47,18 @@ local function configure_results_window()
   end
 end
 
-local function request_context(state, session, instruction)
+local function request_context(state, session, instruction, progress)
   local context = Prompt.new(state, "vibe")
   context.cwd = session.root
   context.full_path = session.current_file
+  -- BaseProvider uses this metadata to mount original project read-only when
+  -- Bubblewrap is available. Vibe still owns cleanup and diff collection.
+  context._sandbox = session
   -- Providers should use paths relative to cwd. Exposing the absolute temp path
   -- can trigger external-directory permission checks in agent harnesses.
   context.file_reference = session.current_relative or "."
   context.instruction = instruction
+  context:set_progress(progress)
   return context
 end
 

@@ -32,6 +32,7 @@ approval for multi-file changes.
 
 Key features:
 - Visual selection editing (AI replaces only selected code)
+- Disposable provider workspaces under tmp_dir for every request
 - Multi-provider support (OpenCode, Claude, Cursor, Gemini, Kiro, Pi)
 - Multi-file edits with per-file approval
 - Import detection and routing
@@ -54,6 +55,7 @@ explicit action.
   - pi (https://github.com/badlogic/pi-mono)
 
 Optional:
+- Bubblewrap / bwrap on Linux (read-only original-project mount)
 - telescope.nvim (for model/provider pickers)
 - fzf-lua (alternative to telescope)
 - nvim-cmp or blink.cmp (for enhanced completions)
@@ -110,8 +112,8 @@ Setup options:                                          *agent-smith-options*
   `logger`          Logger options: { level, path, print_on_error }
   `completion`      Completion config: { source, custom_rules, files }
   `md_files`        Context file names to discover (default: {"AGENTS.md"})
-  `tmp_dir`         Absolute temp root outside project for sandbox sessions.
-                    Agent harness permissions must allow this path.
+  `tmp_dir`         Absolute temp root outside project for disposable provider
+                    workspaces. Agent harness permissions must allow this path.
   `default_keymaps` Set false to disable default keymaps
 
 ==============================================================================
@@ -521,12 +523,27 @@ Request lifecycle:                                 *agent-smith-lifecycle*
      - User instructions
      - Current file path
      - Resolved #rules and @files
-  5. Provider CLI spawned asynchronously
-  6. Response received
-  7. Parsed and applied:
+  5. Project copied to a unique disposable workspace under tmp_dir
+  6. Provider CLI spawned asynchronously with disposable workspace as cwd
+  7. Progress view receives queued/running phase and latest provider stdout
+  8. Response paths remapped to original project; workspace deleted
+  9. Parsed and applied:
      - Visual: imports extracted, selection replaced
      - Search: fuzzy location picker opened (quickfix fallback)
      - Multi-file: approval flow per file
+
+Non-Vibe request sandbox:                    *agent-smith-request-sandbox*
+
+  - Every non-Vibe provider request runs from a unique project copy under tmp_dir
+  - Provider-side relative writes affect only disposable workspace
+  - Response paths are remapped from workspace to original project
+  - Workspace is deleted before operation handles provider response
+  - Pi disables mutating tools for non-Vibe operations; OpenCode uses its plan
+    agent, while disposable workspace remains containment boundary
+  - On Linux with Bubblewrap (bwrap), canonical project path is mounted
+    read-only, blocking writes through that path even if provider invokes tools
+  - Without Bubblewrap, provider CLI retains normal host permissions; only
+    project-relative writes are isolated by disposable cwd
 
 Sandboxed Vibe lifecycle:                      *agent-smith-vibe-sandbox*
 

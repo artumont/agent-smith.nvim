@@ -5,9 +5,9 @@ function P:_get_provider_name() return "OpenCode" end
 -- opencode/claude-sonnet-4-5 identifier: current OpenCode installs do not list it.
 function P:_get_default_model() return "opencode/mimo-v2.5-free" end
 function P:_build_command(query, context)
-  -- OpenCode's plan agent denies project edits while retaining inspection tools.
-  -- Visual changes must come back as text for Agent-Smith to apply.
-  local agent = context.operation == "visual" and "plan" or "build"
+  -- Non-Vibe operations consume text responses and need no provider-side edits.
+  -- Vibe execution writes only into its disposable project copy.
+  local agent = context.operation == "vibe" and "build" or "plan"
   local command = { "opencode", "run", "--agent", agent, "-m", context.model }
   if context.cwd then vim.list_extend(command, { "--dir", context.cwd }) end
   table.insert(command, query)

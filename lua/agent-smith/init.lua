@@ -79,7 +79,7 @@ end
 ---   - logger: { level: string, path?: string }
 ---   - completion: { source: "native"|"cmp"|"blink", custom_rules: string[] }
 ---   - md_files: string[] (context files to discover, default: {"AGENTS.md"})
----   - tmp_dir: string (temp file directory)
+---   - tmp_dir: string (disposable provider workspace root outside project)
 ---   - default_keymaps: boolean (set false to disable default keymaps)
 ---@return table M The module table for chaining
 function M.setup(opts)

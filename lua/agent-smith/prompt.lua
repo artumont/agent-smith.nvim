@@ -11,25 +11,21 @@
 ---                        -> failed
 ---                        -> cancelled
 ---
---- Context assembly order (the final query sent to the provider):
---- 1. AGENTS.md files (discovered from current dir up to git root)
---- 2. Operation-specific system prompt (visual selection, search format, etc.)
---- 3. User's natural language instructions
---- 4. Current file path
---- 5. Resolved references (#rules, @files)
---- 6. For visual: selection content and surrounding context
---- 7. Temp file location (where provider writes output)
---- 8. "Only write to temp file" instruction
+--- Request assembly and isolation:
+--- 1. Read AGENTS.md files from original project hierarchy
+--- 2. Copy project into unique disposable workspace under tmp_dir
+--- 3. Assemble operation contract, user request, relative file reference,
+---    resolved #rules/@files, and visual selection content
+--- 4. Run provider from disposable workspace
+--- 5. Remap response paths to original project and delete workspace
 ---
 --- Potential pitfalls:
 --- - Mark validity: Visual selection marks ('< and '>) are only valid
 ---   immediately after leaving visual mode. Range.from_visual_selection()
 ---   captures them at the right moment. If you call new() later, the
 ---   marks may be stale.
---- - Temp file race condition: The temp file is created before the request
----   starts, but the provider may take time to write to it. We read the
----   file in the exit callback, which is safe because vim.system()
----   guarantees the process has exited.
+--- - Sandbox cost: Each non-Vibe request copies tracked plus untracked,
+---   nonignored project files. Large repositories may increase startup time.
 --- - Context window size: Large AGENTS.md files or many #rules can inflate
 ---   the context. There's no automatic truncation. Keep context files concise.
 --- - Provider response format: Each provider returns raw text. The parsing
@@ -116,6 +112,8 @@ function M:cancel()
 		return
 	end
 	self.state = "cancelled"
+	self:set_progress("Cancelling")
+	if self._cancel_queued and self._cancel_queued() then return end
 	if self._proc then
 		pcall(self._proc.kill, self._proc, vim.uv.constants.SIGTERM)
 	end
@@ -162,6 +160,35 @@ function M:_read_md_files()
 	end
 end
 
+--- Create disposable project copy for non-Vibe requests. Vibe owns its
+--- two-phase sandbox lifecycle and sets _sandbox itself.
+---@return boolean ok
+---@return string|nil error_message
+function M:_prepare_sandbox()
+	if self.operation == "vibe" or self._sandbox then return true, nil end
+
+	local ok, session = pcall(Sandbox.create, self.full_path, self._state:tmp_dir(), {
+		prefix = "request",
+		snapshot = false,
+	})
+	if not ok then return false, tostring(session) end
+
+	self._sandbox = session
+	self._source_cwd = self.cwd or session.project_root
+	self.cwd = session.root
+	self.file_reference = session.current_relative or "."
+	self.tmp_file = vim.fs.joinpath(session.root, ".agent-smith-response-" .. self.xid)
+	return true, nil
+end
+
+function M:_cleanup_sandbox()
+	if not self._sandbox or self.operation == "vibe" then return end
+	Sandbox.cleanup(self._sandbox)
+	self._sandbox = nil
+	self.cwd = self._source_cwd or self.cwd
+	self._source_cwd = nil
+end
+
 --- Start the request: assemble context and send to provider.
 ---
 --- This is the main entry point that kicks off the async AI request.
@@ -171,10 +198,26 @@ end
 ---@param observer table Callbacks: { on_stdout, on_complete }
 ---@return nil
 function M:start(user_prompt, observer)
+	if self:is_cancelled() then
+		self._state.tracking:complete(self)
+		observer.on_complete("cancelled", "")
+		return
+	end
+
 	self.user_prompt = user_prompt
 	self:_read_md_files()
 	self.state = "requesting"
+	if self.operation ~= "vibe" then self:set_progress("Preparing sandbox") end
 	self._state.tracking:track(self)
+
+	local sandbox_ok, sandbox_error = self:_prepare_sandbox()
+	if not sandbox_ok then
+		self.state = "failed"
+		self:set_progress("Sandbox setup failed")
+		self._state.tracking:complete(self)
+		observer.on_complete("failed", "Unable to create request sandbox: " .. sandbox_error)
+		return
+	end
 
 	-- Build operation-specific instruction. Multi-phase workflows may supply
 	-- an explicit contract through context.instruction.

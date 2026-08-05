@@ -62,56 +62,102 @@ local function relative_to(path, root)
   return path:sub(#prefix + 1)
 end
 
+local function canonical_target(path)
+  path = vim.fs.normalize(path)
+  local missing = {}
+  local existing = path
+  while not vim.uv.fs_stat(existing) do
+    local parent = vim.fs.dirname(existing)
+    if not parent or parent == existing then break end
+    table.insert(missing, 1, vim.fs.basename(existing))
+    existing = parent
+  end
+
+  local resolved = vim.uv.fs_realpath(existing) or vim.fs.normalize(existing)
+  for _, part in ipairs(missing) do resolved = join(resolved, part) end
+  return vim.fs.normalize(resolved)
+end
+
+local function is_within(path, root)
+  path, root = vim.fs.normalize(path), vim.fs.normalize(root)
+  if #path > 1 then path = path:gsub("/$", "") end
+  if #root > 1 then root = root:gsub("/$", "") end
+  return path == root or path:sub(1, #root + 1) == root .. "/"
+end
+
 --- Copy current project state into a unique temporary directory.
 ---@param current_file string Current original buffer path
 ---@param temp_root? string Configured provider-approved temporary root
+---@param opts? table Options: { prefix: string, snapshot: boolean }
 ---@return table session
-function M.create(current_file, temp_root)
+function M.create(current_file, temp_root, opts)
+  opts = opts or {}
+  if current_file ~= "" then
+    current_file = vim.uv.fs_realpath(current_file) or vim.fs.normalize(current_file)
+  end
   local project_root = vim.fs.root(current_file ~= "" and current_file or vim.fn.getcwd(), ".git")
     or vim.fn.getcwd()
+  project_root = vim.uv.fs_realpath(project_root) or vim.fs.normalize(project_root)
   temp_root = temp_root or (vim.fn.tempname():match("^(.*)/[^/]+$") or "/tmp")
-  temp_root = vim.fn.fnamemodify(temp_root, ":p"):gsub("/$", "")
-  local normalized_project = vim.fs.normalize(project_root):gsub("/$", "")
-  if temp_root == normalized_project or temp_root:sub(1, #normalized_project + 1) == normalized_project .. "/" then
-    error("Vibe tmp_dir must be outside the original project: " .. temp_root)
+  temp_root = canonical_target(vim.fn.fnamemodify(temp_root, ":p"))
+  if is_within(temp_root, project_root) then
+    error("Agent-Smith tmp_dir must be outside the original project: " .. temp_root)
   end
+  local prefix = opts.prefix or "vibe"
+  if not prefix:match("^[%w-]+$") then error("Invalid sandbox prefix: " .. tostring(prefix)) end
   local session_root = string.format(
-    "%s/sessions/vibe-%d-%d",
+    "%s/sessions/%s-%d-%d",
     temp_root,
+    prefix,
     os.time(),
     vim.uv.hrtime() % 1000000000
   )
-  vim.fn.mkdir(session_root, "p")
-
-  local snapshot = {}
-  for _, relative in ipairs(project_files(project_root)) do
-    relative = normalize_relative(relative)
-    if relative then
-      local source = join(project_root, relative)
-      local stat = vim.uv.fs_stat(source)
-      if stat and stat.type == "file" then
-        copy_file(source, join(session_root, relative))
-        snapshot[relative] = Utils.read_file(source)
-      end
+  vim.fn.mkdir(session_root, "p", 448)
+  if vim.fn.has("win32") ~= 1 then
+    local chmod_ok, chmod_error = vim.uv.fs_chmod(session_root, 448)
+    if not chmod_ok then
+      vim.fn.delete(session_root, "rf")
+      error("Unable to secure sandbox: " .. tostring(chmod_error))
     end
   end
 
-  -- Give agent harnesses an unambiguous project root. This repository is
-  -- isolated metadata inside the sandbox and has no link to the original Git
-  -- directory or worktree.
-  vim.fn.system({ "git", "-C", session_root, "init", "--quiet" })
+  local ok, session = pcall(function()
+    local snapshot = {}
+    for _, relative in ipairs(project_files(project_root)) do
+      relative = normalize_relative(relative)
+      if relative then
+        local source = join(project_root, relative)
+        local stat = vim.uv.fs_stat(source)
+        if stat and stat.type == "file" then
+          copy_file(source, join(session_root, relative))
+          if opts.snapshot ~= false then snapshot[relative] = Utils.read_file(source) end
+        end
+      end
+    end
 
-  local current_relative = relative_to(current_file, project_root)
-  return {
-    root = session_root,
-    project_root = project_root,
-    source_current_file = current_file,
-    temp_root = temp_root,
-    snapshot = snapshot,
-    current_relative = current_relative,
-    current_file = current_relative and join(session_root, current_relative)
-      or join(session_root, ".agent-smith-context"),
-  }
+    -- Give agent harnesses an unambiguous project root. This repository is
+    -- isolated metadata inside the sandbox and has no link to the original Git
+    -- directory or worktree.
+    vim.fn.system({ "git", "-C", session_root, "init", "--quiet" })
+
+    local current_relative = relative_to(current_file, project_root)
+    return {
+      root = session_root,
+      project_root = project_root,
+      source_current_file = current_file,
+      temp_root = temp_root,
+      prefix = prefix,
+      snapshot = snapshot,
+      current_relative = current_relative,
+      current_file = current_relative and join(session_root, current_relative)
+        or join(session_root, ".agent-smith-context"),
+    }
+  end)
+  if not ok then
+    vim.fn.delete(session_root, "rf")
+    error(session, 0)
+  end
+  return session
 end
 
 function M.cleanup(session)
@@ -122,7 +168,9 @@ end
 ---@param session table
 ---@return table fresh_session
 function M.recreate(session)
-  local fresh = M.create(session.source_current_file, session.temp_root)
+  local fresh = M.create(session.source_current_file, session.temp_root, {
+    prefix = session.prefix or "vibe",
+  })
   M.cleanup(session)
   return fresh
 end
@@ -198,7 +246,7 @@ end
 --- Convert sandbox absolute locations back to original project locations.
 function M.remap_response(session, response)
   local escaped = session.root:gsub("([^%w])", "%%%1")
-  return response:gsub(escaped, session.project_root)
+  return response:gsub(escaped, function() return session.project_root end)
 end
 
 return M

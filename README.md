@@ -53,7 +53,7 @@ smith.setup({
   -- Context files discovered from current file toward git root.
   md_files = { "AGENTS.md" },
 
-  -- Must be absolute, outside project, and allowed by provider permissions.
+  -- Disposable provider workspaces. Must be absolute and outside project.
   tmp_dir = "/tmp/nvim/agent-smith",
 
   -- Default keymaps are enabled unless set to false.
@@ -179,7 +179,7 @@ require("agent-smith").setup({
 
   md_files = { "AGENTS.md" },
 
-  -- Sandbox root. Must be absolute and outside project.
+  -- Disposable provider workspace root. Must be absolute and outside project.
   tmp_dir = "/tmp/nvim/agent-smith",
 
   default_keymaps = true,

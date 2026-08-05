@@ -134,6 +134,31 @@ local function failure_diagnostic(context, command, reason, result, stderr)
   return table.concat(lines, "\n")
 end
 
+--- Protect the original project from provider-side writes on Linux. Provider
+--- still gets a writable disposable copy as cwd. Bubblewrap only overlays the
+--- original project read-only; credentials, caches, network, and host binaries
+--- remain available to provider CLI.
+---@param command string[] Provider command
+---@param context table Prompt context
+---@return string[] command Wrapped or original command
+local function sandbox_command(command, context)
+  local sandbox = context._sandbox
+  if not sandbox or not sandbox.project_root or vim.fn.executable("bwrap") ~= 1 then
+    return command
+  end
+
+  local wrapped = {
+    "bwrap",
+    "--die-with-parent",
+    "--bind", "/", "/",
+    "--ro-bind", sandbox.project_root, sandbox.project_root,
+    "--chdir", context.cwd or sandbox.root,
+    "--",
+  }
+  vim.list_extend(wrapped, command)
+  return wrapped
+end
+
 --- Execute the provider CLI and handle the async response.
 ---
 --- This is the main method that providers inherit. It:
@@ -161,6 +186,7 @@ function BaseProvider:make_request(query, context, observer)
   if #extra_args > 0 then
     vim.list_extend(command, extra_args)
   end
+  command = sandbox_command(command, context)
 
   -- CLI providers normally print the final answer to stdout. Keep every
   -- chunk because vim.system() may stream one response across callbacks.
@@ -173,10 +199,9 @@ function BaseProvider:make_request(query, context, observer)
       text = true,
       cwd = context.cwd,
       stdout = vim.schedule_wrap(function(err, data)
-        if context:is_cancelled() then
-          once_complete("cancelled", "")
-          return
-        end
+        -- Cancellation completes only from exit callback so sandbox and
+        -- tracking remain alive until provider process has actually stopped.
+        if context:is_cancelled() then return end
         if err and err ~= "" then table.insert(stderr, "stdout read error: " .. err) end
         if data then
           table.insert(stdout, data)
@@ -184,10 +209,7 @@ function BaseProvider:make_request(query, context, observer)
         end
       end),
       stderr = vim.schedule_wrap(function(err, data)
-        if context:is_cancelled() then
-          once_complete("cancelled", "")
-          return
-        end
+        if context:is_cancelled() then return end
         if err and err ~= "" then table.insert(stderr, "stderr read error: " .. err) end
         if data then
           table.insert(stderr, data)

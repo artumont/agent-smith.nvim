@@ -37,6 +37,7 @@ agent-smith-options	agent-smith.txt	/*agent-smith-options*
 agent-smith-provider-contract	agent-smith.txt	/*agent-smith-provider-contract*
 agent-smith-provider-list	agent-smith.txt	/*agent-smith-provider-list*
 agent-smith-providers	agent-smith.txt	/*agent-smith-providers*
+agent-smith-request-sandbox	agent-smith.txt	/*agent-smith-request-sandbox*
 agent-smith-requirements	agent-smith.txt	/*agent-smith-requirements*
 agent-smith-setup	agent-smith.txt	/*agent-smith-setup*
 agent-smith-state	agent-smith.txt	/*agent-smith-state*
