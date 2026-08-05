@@ -50,26 +50,41 @@ local ok, err = xpcall(function()
     "visual replacement and import insertion"
   )
 
-  -- Codebase search: provider path remaps from disposable workspace to source.
+  -- Codebase search: AI plans patterns; local ripgrep reads source files.
   local search_project = H.project({ ["main.lua"] = "local model_name = 'test'" })
   local search_file = vim.fs.joinpath(search_project, "main.lua")
   H.edit(search_file)
-  local search_provider = H.fake_provider(function(_, context, observer)
+  local pattern_requests = 0
+  local planner_workspace
+  local search_provider = H.fake_provider(function(query, context, observer)
+    pattern_requests = pattern_requests + 1
+    planner_workspace = context.cwd
     H.assert_equal(context.operation, "search", "search operation")
-    observer.on_complete("success", context.cwd .. "/main.lua:1:7,1,model name")
+    assert(context.skip_sandbox, "pattern planner created a project sandbox")
+    H.assert_equal(context.search_root, search_project, "ripgrep project root")
+    assert(context.cwd ~= search_project, "pattern planner received project workspace")
+    assert(vim.uv.fs_stat(context.cwd), "pattern planner workspace missing")
+    H.assert_match(query, "Do not inspect files", "pattern-only prompt")
+    observer.on_complete("success", [[<RG_PATTERNS><PATTERN>\bmodel_name\b</PATTERN></RG_PATTERNS>]])
   end)
-  Search.run(state_for(search_provider), { additional_prompt = "find model name" })
+  vim.fn.setqflist({}, "r", { items = {} })
+  Search.run(state_for(search_provider), { additional_prompt = "model_name" })
+  assert(vim.wait(5000, function() return #vim.fn.getqflist() == 1 end, 10),
+    "ripgrep search timed out")
   local qf = vim.fn.getqflist()
-  H.assert_equal(#qf, 1, "search quickfix count")
-  H.assert_equal(vim.api.nvim_buf_get_name(qf[1].bufnr), search_file, "search path remapping")
-  H.assert_equal(qf[1].lnum, 1, "search line")
+  H.assert_equal(vim.api.nvim_buf_get_name(qf[1].bufnr), search_file, "ripgrep result path")
+  H.assert_equal(qf[1].lnum, 1, "ripgrep result line")
+  assert(vim.uv.fs_stat(planner_workspace) == nil, "pattern workspace was not cleaned")
   vim.cmd("cclose")
   local picked
   Telescope.search_results = function(items)
     picked = items
     return true
   end
-  Search.run(state_for(search_provider), { additional_prompt = "find model name" })
+  vim.fn.setqflist({}, "r", { items = {} })
+  Search.run(state_for(search_provider), { additional_prompt = "model_name" })
+  assert(vim.wait(5000, function() return picked ~= nil end, 10), "ripgrep picker timed out")
+  H.assert_equal(pattern_requests, 2, "search pattern planner count")
   H.assert_equal(#picked, 1, "search picker result count")
   H.assert_equal(picked[1].lnum, 1, "search picker result")
   Telescope.search_results = original_search_results

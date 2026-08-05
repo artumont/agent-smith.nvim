@@ -189,7 +189,7 @@ end
 ---@return boolean ok
 ---@return string|nil error_message
 function M:_prepare_sandbox()
-	if self.operation == "vibe" or self._sandbox then return true, nil end
+	if self.operation == "vibe" or self.skip_sandbox or self._sandbox then return true, nil end
 
 	local ok, session = pcall(Sandbox.create, self.full_path, self._state:tmp_dir(), {
 		prefix = "request",

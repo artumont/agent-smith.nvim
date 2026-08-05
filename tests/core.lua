@@ -14,6 +14,7 @@ local Marks = require("agent-smith.ops.marks")
 local Geo = require("agent-smith.geo")
 local Completions = require("agent-smith.extensions.completions")
 local Throbber = require("agent-smith.ops.throbber")
+local Search = require("agent-smith.ops.search")
 local State = require("agent-smith.state")
 local Worker = require("agent-smith.extensions.worker")
 
@@ -60,6 +61,13 @@ local ok, err = xpcall(function()
   H.assert_equal(qf[1].filename, vim.fs.joinpath(root, "main.lua"), "relative quickfix path")
   H.assert_equal(qf[1].end_lnum, 3, "quickfix range")
   H.assert_match(qf[2].text, "[missing file]", "missing quickfix marker")
+  H.assert_equal(Qfix.parse_ripgrep("main.lua:2:3:model_name", root), {
+    { filename = vim.fs.joinpath(root, "main.lua"), lnum = 2, col = 3, end_lnum = 2, text = "model_name" },
+  }, "ripgrep quickfix parser")
+  H.assert_match(Prompts.search(), "<RG_PATTERNS>", "search pattern contract")
+  H.assert_equal(Search.parse_patterns("<RG_PATTERNS><PATTERN>\\bmodel_name\\b</PATTERN></RG_PATTERNS>"),
+    { "\\bmodel_name\\b" }, "search pattern parsing")
+  H.assert_equal(Search.parse_patterns("not patterns"), {}, "missing search pattern rejection")
   H.assert_match(Prompts.vibe_plan(), "<PLAN>", "Vibe plan contract")
   H.assert_match(Prompts.vibe_execute("plan", { "main.lua" }), "</VIBE_DONE>", "Vibe completion contract")
   H.assert_match(Prompts.wrap("rules", "request"), "<USER_REQUEST>", "prompt wrapper")

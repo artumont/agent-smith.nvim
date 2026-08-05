@@ -57,4 +57,30 @@ function M.parse(text, cwd)
   return items
 end
 
+--- Parse ripgrep --vimgrep output into quickfix entries.
+---@param text string Raw ripgrep output
+---@param cwd? string Base directory for relative result paths
+---@return table[] items
+function M.parse_ripgrep(text, cwd)
+  local items = {}
+
+  for line in text:gmatch("[^\r\n]+") do
+    local file, lnum, col, match = line:match("^(.-):(%d+):(%d+):(.*)$")
+    if file then
+      if cwd and vim.fn.isabsolutepath(file) ~= 1 then
+        file = vim.fs.joinpath(cwd, file)
+      end
+      table.insert(items, {
+        filename = file,
+        lnum = tonumber(lnum),
+        col = tonumber(col),
+        end_lnum = tonumber(lnum),
+        text = match,
+      })
+    end
+  end
+
+  return items
+end
+
 return M

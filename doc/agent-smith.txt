@@ -36,7 +36,7 @@ Key features:
 - Multi-provider support (OpenCode, Claude, Cursor, Gemini, Kiro, Pi)
 - Multi-file edits with per-file approval
 - Import detection and routing
-- Semantic search with fuzzy Telescope/fzf-lua results and quickfix fallback
+- AI-planned ripgrep code search with fuzzy Telescope/fzf-lua results and quickfix fallback
 - Custom rules (#SKILL.md) and file references (@path)
 
 The core philosophy is user control: no changes happen without your
@@ -49,6 +49,7 @@ explicit action.
 - One supported AI CLI in PATH:
   - opencode (https://opencode.ai)
   - claude (https://claude.ai)
+- ripgrep (rg) in PATH for codebase search
   - cursor-agent (https://cursor.com)
   - gemini (https://gemini.google.com)
   - kiro-cli (https://kiro.dev)
@@ -192,8 +193,9 @@ All operations are accessed via Lua functions: >lua
   Multi-file edit with per-file approval.
 
   *:AgentSmithSearch*     |smith.search()|
-  Semantic search with a fuzzy result picker. Uses Telescope or fzf-lua when
-  available and falls back to quickfix.
+  AI turns natural-language request into PCRE2 patterns from isolated empty
+  workspace, then local ripgrep searches project files. Uses Telescope or
+  fzf-lua when available and falls back to quickfix.
 
   *:AgentSmithVibe*       |smith.vibe()|
   Sandboxed two-phase agentic workflow.
@@ -234,7 +236,7 @@ Default keymaps (set default_keymaps = false to disable):
     <leader>aS    Multi-file edit (with approval)
 
   Normal mode:
-    <leader>af    Semantic search
+    <leader>af    AI-planned ripgrep search
     <leader>av    Vibe mode
     <leader>ax    Cancel all requests
     <leader>ar    Request progress
@@ -477,7 +479,7 @@ Public functions:                                        *smith.setup()*
   `smith.setup(opts?)`        Initialize plugin
   `smith.visual(opts?)`       Visual selection edit
   `smith.multi_file(opts?)`   Multi-file edit with approval
-  `smith.search(opts?)`       Semantic search
+  `smith.search(opts?)`       AI-planned ripgrep search
   `smith.vibe(opts?)`         Vibe mode
   `smith.tutorial(opts?)`     Tutorial generation
   `smith.progress()`          Open live request-progress window
@@ -620,7 +622,7 @@ Single State singleton holds:
   4. Network connection (if using cloud providers)
   5. Read stderr in the failure notification
 
-No semantic search results:                  *agent-smith-error-quickfix*
+No code search results:                      *agent-smith-error-quickfix*
 
   The AI response didn't match the expected location format. Try:
   1. Rephrase your search query

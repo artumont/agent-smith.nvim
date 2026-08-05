@@ -175,14 +175,10 @@ function M.multi_file(opts)
 	return M.visual(opts)
 end
 
---- Run a semantic search across the project.
+--- Run AI-planned ripgrep search across project.
 ---
---- Sends a natural language query to the AI, which scans the codebase and
---- returns structured locations (file:line:col,count,note). Results are
---- populated into the quickfix list.
----
---- The AI must follow a strict output format for search results. If the
---- response doesn't match the expected format, no quickfix entries are created.
+--- Provider returns only PCRE2 patterns; local `rg --vimgrep` reads project
+--- files and populates quickfix plus optional fuzzy picker.
 ---
 ---@param opts? table Optional:
 ---   - additional_prompt: string (skip prompt window, use this directly)

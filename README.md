@@ -3,7 +3,7 @@
 Neovim AI agent built for control and power.
 
 Agent-Smith provides bounded visual edits, structured multi-file changes with
-approval, semantic search, tutorials, and sandboxed Vibe sessions.
+approval, fast ripgrep code search, tutorials, and sandboxed Vibe sessions.
 
 Supports OpenCode, Claude Code, Cursor Agent, Gemini CLI, Kiro CLI, and
 [pi](https://github.com/badlogic/pi-mono).
@@ -67,7 +67,7 @@ Default keymaps:
 | --- | --- | --- |
 | Visual | `<leader>as` | Visual edit |
 | Visual | `<leader>aS` | Multi-file edit |
-| Normal | `<leader>af` | Semantic search |
+| Normal | `<leader>af` | Ripgrep code search |
 | Normal | `<leader>av` | Vibe mode |
 | Normal | `<leader>ax` | Cancel all requests |
 | Normal | `<leader>ar` | Request progress |
@@ -97,8 +97,9 @@ Default keymaps:
   inline `Implementing` marker. Use `q`/`<Esc>` to close, `r` to refresh, or
   `x` to cancel all tracked requests.
 
-- **Semantic Search**: Ask a natural-language question and fuzzy-filter parsed
-  code locations through Telescope or fzf-lua, with quickfix fallback.
+- **Codebase Search**: AI converts natural-language request into a small set of
+  PCRE2 patterns from isolated empty workspace; local `rg` then finds every
+  project match. Results open through Telescope or fzf-lua, with quickfix fallback.
 
 - **Sandboxed Vibe**: Run a two-phase workflow in a temporary project copy.
   The model first returns a plan and editable file scope. After plan approval,
@@ -212,7 +213,7 @@ Agent-Smith does not register `:AgentSmith...` Ex commands. Use the Lua API:
 | `smith.visual(opts?)` | Edit the visual selection |
 | `smith.progress()` | Open live request-progress window |
 | `smith.multi_file(opts?)` | Request multi-file changes with approval |
-| `smith.search(opts?)` | Search project and open fuzzy location results |
+| `smith.search(opts?)` | Plan ripgrep patterns, then open local matches |
 | `smith.vibe(opts?)` | Run the sandboxed two-phase workflow |
 | `smith.tutorial(opts?)` | Generate a tutorial in a split |
 | `smith.stop_all_requests()` | Cancel in-flight requests |
@@ -230,7 +231,7 @@ Agent-Smith does not register `:AgentSmith...` Ex commands. Use the Lua API:
 Search and Vibe accept `additional_prompt` to skip their prompt window:
 
 ```lua
-smith.search({ additional_prompt = "Find all API endpoints" })
+smith.search({ additional_prompt = "Find user creation handlers" })
 smith.vibe({ additional_prompt = "Analyze the authentication flow" })
 ```
 
@@ -259,6 +260,7 @@ Example lualine component:
 
 - Neovim >= 0.10
 - One supported AI CLI available in `$PATH`
+- Ripgrep (`rg`) available in `$PATH` for codebase search
 - Optional on Linux: Bubblewrap (`bwrap`) for read-only original-project mount
 - Optional: `nvim-cmp`, `blink.cmp`, Telescope, or fzf-lua for integrations
 
