@@ -59,6 +59,7 @@ local function request_context(state, session, instruction, progress, phase)
   context.file_reference = session.current_relative or "."
   context.instruction = instruction
   context.vibe_phase = phase
+  if phase == "plan" then context.response_terminator = "</PLAN>" end
   context:set_progress(progress)
   return context
 end

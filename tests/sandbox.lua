@@ -120,6 +120,41 @@ if vim.fn.executable("bwrap") == 1 then
 end
 Session.cleanup(session)
 
+if vim.fn.executable("setsid") == 1 then
+  local plan_provider = setmetatable({}, { __index = Base })
+  function plan_provider:_get_provider_name() return "plan-test" end
+  function plan_provider:_build_command()
+    return {
+      "sh", "-c",
+      "printf '<PLAN><EDIT_FILES></EDIT_FILES><STEPS>noop</STEPS></PLAN>'; sleep 10",
+    }
+  end
+  local plan_done = false
+  local plan_status, plan_response
+  local plan_started = vim.uv.hrtime()
+  local plan_context = {
+    cwd = temp_root,
+    tmp_file = vim.fs.joinpath(temp_root, ".plan-response"),
+    model = "",
+    response_terminator = "</PLAN>",
+    _state = state,
+    is_cancelled = function() return false end,
+    _set_process = function(self, proc) self.proc = proc end,
+  }
+  plan_provider:make_request("test", plan_context, {
+    on_start = function() end,
+    on_stdout = function() end,
+    on_stderr = function() end,
+    on_complete = function(status, response)
+      plan_status, plan_response, plan_done = status, response, true
+    end,
+  })
+  assert(vim.wait(1500, function() return plan_done end), "plan terminator request timed out")
+  assert(plan_status == "success", "plan terminator status was " .. tostring(plan_status))
+  assert(plan_response:find("</PLAN>", 1, true), "plan terminator response was truncated")
+  assert((vim.uv.hrtime() - plan_started) / 1e6 < 1500, "plan waited for CLI shutdown")
+end
+
 local failed_source = vim.fs.joinpath(project, "copy-failure.txt")
 write(failed_source, "secret")
 vim.fn.system({ "git", "-C", project, "add", "copy-failure.txt" })

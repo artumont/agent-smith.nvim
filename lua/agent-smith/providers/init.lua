@@ -159,6 +159,29 @@ local function sandbox_command(command, context)
   return wrapped
 end
 
+--- Put delimited-response providers in their own Unix process group. Some
+--- agent CLIs print their final response but keep helper processes or pipes
+--- alive; killing the group closes those handles without leaking children.
+local function process_group_command(command, context)
+  if not context.response_terminator or vim.fn.has("win32") == 1
+    or vim.fn.executable("setsid") ~= 1 then
+    return command
+  end
+  context._provider_process_group = true
+  local wrapped = { "setsid", "--wait" }
+  vim.list_extend(wrapped, command)
+  return wrapped
+end
+
+local function terminate_process(context, process)
+  if not process then return end
+  if context._provider_process_group and process.pid then
+    local ok, result = pcall(vim.uv.kill, -process.pid, vim.uv.constants.SIGTERM)
+    if ok and result == 0 then return end
+  end
+  pcall(process.kill, process, vim.uv.constants.SIGTERM)
+end
+
 --- Execute the provider CLI and handle the async response.
 ---
 --- This is the main method that providers inherit. It:
@@ -187,11 +210,14 @@ function BaseProvider:make_request(query, context, observer)
     vim.list_extend(command, extra_args)
   end
   command = sandbox_command(command, context)
+  command = process_group_command(command, context)
 
   -- CLI providers normally print the final answer to stdout. Keep every
   -- chunk because vim.system() may stream one response across callbacks.
   local stdout = {}
   local stderr = {}
+  local early_response
+  local process
   local ok, proc = pcall(
     vim.system,
     command,
@@ -206,6 +232,13 @@ function BaseProvider:make_request(query, context, observer)
         if data then
           table.insert(stdout, data)
           observer.on_stdout(data)
+          if context.response_terminator and not early_response then
+            local response = table.concat(stdout, "")
+            if response:find(context.response_terminator, 1, true) then
+              early_response = response
+              terminate_process(context, process)
+            end
+          end
         end
       end),
       stderr = vim.schedule_wrap(function(err, data)
@@ -220,6 +253,11 @@ function BaseProvider:make_request(query, context, observer)
     vim.schedule_wrap(function(obj)
       if context:is_cancelled() then
         once_complete("cancelled", "")
+        return
+      end
+
+      if early_response then
+        once_complete("success", early_response)
         return
       end
 
@@ -263,6 +301,8 @@ function BaseProvider:make_request(query, context, observer)
     return nil
   end
 
+  process = proc
+  if early_response then terminate_process(context, process) end
   context:_set_process(proc)
   return proc
 end
