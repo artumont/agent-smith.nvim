@@ -17,7 +17,7 @@ M.__index = M
 --- Set above=true to render before the anchor row; set above=false to render
 --- after it. Visual edits create one of each so feedback brackets selection.
 ---@param label string Status label
----@param opts table { buffer: number, row: number, col?: number, above?: boolean }
+---@param opts table { buffer: number, row: number, col?: number, above?: boolean, show_output?: boolean }
 ---@return table status
 function M.new(label, opts)
   opts = opts or {}
@@ -29,6 +29,8 @@ function M.new(label, opts)
     above = opts.above ~= false,
     frame = 1,
     running = false,
+    show_output = opts.show_output == true,
+    output = nil,
     extmark = nil,
   }, M)
 end
@@ -57,9 +59,17 @@ function M:_render()
   else
     chunks = { { text, "Comment" } }
   end
+  local virt_lines = { chunks }
+  if self.show_output and self.output then
+    virt_lines = {
+      { { "┄ Agent output ┄", "Comment" } },
+      { { "  " .. self.output, "Comment" } },
+      chunks,
+    }
+  end
   self.extmark = vim.api.nvim_buf_set_extmark(self.buffer, namespace, row, self.col, {
     id = self.extmark,
-    virt_lines = { chunks },
+    virt_lines = virt_lines,
     virt_lines_above = self.above,
   })
   self.frame = self.frame % #frames + 1
@@ -78,8 +88,16 @@ function M:start()
   vim.defer_fn(tick, 120)
 end
 
----@param _ string Provider output is intentionally not shown inline.
-function M:push(_) end
+--- Render latest non-empty provider output above status line. Provider
+--- thinking remains unavailable unless CLI emits it on stdout.
+---@param text string Provider output chunk
+function M:push(text)
+  for line in text:gmatch("[^\r\n]+") do
+    line = vim.trim(line)
+    if line ~= "" then self.output = vim.fn.strcharpart(line, 0, 160) end
+  end
+  if self.output then self:_render() end
+end
 
 function M:stop()
   self.running = false

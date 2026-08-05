@@ -64,12 +64,13 @@ smith.setup({
 Default keymaps:
 
 | Mode | Key | Operation |
-|---|---|---|
+| --- | --- | --- |
 | Visual | `<leader>as` | Visual edit |
 | Visual | `<leader>aS` | Multi-file edit |
 | Normal | `<leader>af` | Semantic search |
 | Normal | `<leader>av` | Vibe mode |
 | Normal | `<leader>ax` | Cancel all requests |
+| Normal | `<leader>ar` | Request progress |
 
 ## Features
 
@@ -77,9 +78,24 @@ Default keymaps:
   response replaces the selected range. Detected imports are routed to the
   file's import section.
 
+- **Disposable Request Sandboxes**: Every provider request runs from a unique
+  project copy under `tmp_dir`. Agent-Smith discards request sandboxes after
+  responses and applies only parsed, reviewed output. On Linux with Bubblewrap
+  (`bwrap`), canonical project path is mounted read-only inside provider
+  process, blocking writes through that path even when model invokes mutating
+  tools. Without
+  Bubblewrap, project-relative writes stay in disposable copy, but provider CLI
+  retains its normal host permissions.
+
 - **Multi-File Edits**: Ask for changes across files using the structured
   `<FILE_CHANGE>` / `<CONTENT>` response format. Each proposed file opens in an
   approval window before it is written.
+
+- **Request Progress**: Open live floating view with `<leader>ar` or
+  `smith.progress()`. It shows queued implementations, Vibe phase, elapsed
+  time, and latest provider stdout. Visual edits also render latest stdout above
+  inline `Implementing` marker. Use `q`/`<Esc>` to close, `r` to refresh, or
+  `x` to cancel all tracked requests.
 
 - **Semantic Search**: Ask a natural-language question and fuzzy-filter parsed
   code locations through Telescope or fzf-lua, with quickfix fallback.
@@ -125,7 +141,7 @@ Default keymaps:
 ## Providers
 
 | Provider | CLI | Status |
-|---|---|---|
+| --- | --- | --- |
 | `OpenCodeProvider` | `opencode` | Tested |
 | `PiProvider` | `pi` | Tested |
 | `ClaudeCodeProvider` | `claude` | Should work; unverified |
@@ -191,9 +207,10 @@ require("agent-smith").setup({
 Agent-Smith does not register `:AgentSmith...` Ex commands. Use the Lua API:
 
 | Function | Description |
-|---|---|
+| --- | --- |
 | `smith.setup(opts?)` | Initialize the plugin |
 | `smith.visual(opts?)` | Edit the visual selection |
+| `smith.progress()` | Open live request-progress window |
 | `smith.multi_file(opts?)` | Request multi-file changes with approval |
 | `smith.search(opts?)` | Search project and open fuzzy location results |
 | `smith.vibe(opts?)` | Run the sandboxed two-phase workflow |
@@ -242,4 +259,12 @@ Example lualine component:
 
 - Neovim >= 0.9
 - One supported AI CLI available in `$PATH`
+- Optional on Linux: Bubblewrap (`bwrap`) for read-only original-project mount
 - Optional: `nvim-cmp`, `blink.cmp`, Telescope, or fzf-lua for integrations
+
+## Tests
+
+```sh
+nvim --headless -u NONE -l tests/sandbox.lua
+nvim --headless -u NONE -l tests/progress.lua
+```

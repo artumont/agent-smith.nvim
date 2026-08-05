@@ -84,7 +84,12 @@ local function show_analysis_results(session, response)
 end
 
 local function execute_plan(state, session, user, plan)
-  local context = request_context(state, session, Prompts.vibe_execute(plan.raw, plan.files))
+  local context = request_context(
+    state,
+    session,
+    Prompts.vibe_execute(plan.raw, plan.files),
+    "Executing Vibe"
+  )
   Statusline.start(context, "Executing Vibe")
   context:start(user, {
     on_complete = function(status, response)
@@ -123,7 +128,7 @@ local function start_session(state, user)
     return
   end
 
-  local context = request_context(state, session, Prompts.vibe_plan())
+  local context = request_context(state, session, Prompts.vibe_plan(), "Planning Vibe")
   Statusline.start(context, "Planning Vibe")
   context:start(user, {
     on_complete = function(status, response)

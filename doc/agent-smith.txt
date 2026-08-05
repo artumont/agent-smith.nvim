@@ -209,6 +209,12 @@ All operations are accessed via Lua functions: >lua
   *:AgentSmithTutorial*   |smith.tutorial()|
   Generate a tutorial in a split window.
 
+  *:AgentSmithProgress*   |smith.progress()|
+  Open live request-progress floating window. It lists queued visual edits,
+  Vibe planning/execution phases, elapsed time, and latest provider stdout.
+  q or Esc closes, r refreshes, x cancels all tracked requests. Visual edits
+  also render latest provider stdout above the inline Implementing marker.
+
   *:AgentSmithCancel*     |smith.stop_all_requests()|
   Cancel all in-flight requests.
 
@@ -231,6 +237,7 @@ Default keymaps (set default_keymaps = false to disable):
     <leader>af    Semantic search
     <leader>av    Vibe mode
     <leader>ax    Cancel all requests
+    <leader>ar    Request progress
 
 Custom keymaps: >lua
   vim.keymap.set("v", "<leader>e", function()
@@ -473,6 +480,7 @@ Public functions:                                        *smith.setup()*
   `smith.search(opts?)`       Semantic search
   `smith.vibe(opts?)`         Vibe mode
   `smith.tutorial(opts?)`     Tutorial generation
+  `smith.progress()`          Open live request-progress window
   `smith.stop_all_requests()` Cancel all in-flight requests
   `smith.clear_previous_requests()` Clear request history
   `smith.set_model(model)`    Set active model

@@ -40,6 +40,7 @@ local id = require("agent-smith.id")
 local Utils = require("agent-smith.utils")
 local Prompts = require("agent-smith.prompts")
 local Geo = require("agent-smith.geo")
+local Sandbox = require("agent-smith.ops.vibe-session")
 
 local M = {}
 M.__index = M
@@ -61,6 +62,9 @@ function M.new(state, operation)
 		user_prompt = "",
 		full_path = vim.api.nvim_buf_get_name(0),
 		started_at = vim.uv.hrtime(),
+		updated_at = vim.uv.hrtime(),
+		progress = "Ready",
+		output = {},
 		agent_context = {},
 		tmp_file = Utils.random_file(state:tmp_dir()),
 		clean_ups = {},
@@ -81,6 +85,23 @@ end
 ---@return string First line, truncated to 80 chars
 function M:summary()
 	return self.user_prompt:gsub("\n.*", ""):sub(1, 80)
+end
+
+--- Update user-visible request phase.
+---@param phase string
+function M:set_progress(phase)
+	self.progress = phase
+	self.updated_at = vim.uv.hrtime()
+end
+
+--- Record bounded provider output for request-progress view.
+---@param text string
+function M:push_output(text)
+	for line in text:gmatch("[^\r\n]+") do
+		table.insert(self.output, line)
+	end
+	while #self.output > 6 do table.remove(self.output, 1) end
+	self.updated_at = vim.uv.hrtime()
 end
 
 --- Check if this request was cancelled.
@@ -245,14 +266,22 @@ function M:start(user_prompt, observer)
 
 	-- Send to provider (async, non-blocking)
 	provider:make_request(query, self, {
-		on_start = function() end,
+		on_start = function()
+			if self.operation ~= "vibe" then self:set_progress("Working") end
+		end,
 		on_stdout = function(line)
+			self:push_output(line)
 			if observer.on_stdout then
 				observer.on_stdout(line)
 			end
 		end,
 		on_stderr = function(_) end,
 		on_complete = function(status, response)
+			self:set_progress(status == "success" and "Finished" or status)
+			if self._sandbox then
+				response = Sandbox.remap_response(self._sandbox, response or "")
+			end
+			self:_cleanup_sandbox()
 			self.state = status
 			self._state.tracking:complete(self)
 			observer.on_complete(status, response)

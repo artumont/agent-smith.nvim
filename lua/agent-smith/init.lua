@@ -110,6 +110,9 @@ function M.setup(opts)
 		vim.keymap.set("n", "<leader>ax", function()
 			M.stop_all_requests()
 		end, { desc = "Agent-Smith cancel" })
+		vim.keymap.set("n", "<leader>ar", function()
+			M.progress()
+		end, { desc = "Agent-Smith request progress" })
 	end
 
 	-- Safety: kill all provider processes when Neovim exits
@@ -290,6 +293,12 @@ function M.view_logs()
 			end
 		end
 	)
+end
+
+--- Open floating live view for queued and active requests.
+---@return number|nil win
+function M.progress()
+	return require("agent-smith.window.progress-window").open(configured())
 end
 
 --- Show current plugin status.

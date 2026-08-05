@@ -86,6 +86,7 @@ function M.run(state, opts)
         row = start_row,
         col = 0,
         above = true,
+        show_output = true,
       })
       local bottom_status = InlineStatus.new("Implementing", {
         buffer = context.buffer,
@@ -95,25 +96,42 @@ function M.run(state, opts)
       })
       top_status:start()
       bottom_status:start()
+      context:set_progress("Queued implementation")
+      state.tracking:queue(context)
       Statusline.start(context, "Implementing")
+
+      local finished = false
+      local done_callback
+      local function finish()
+        if finished then return end
+        finished = true
+        context._cancel_queued = nil
+        top_status:stop()
+        bottom_status:stop()
+        Statusline.stop(context)
+        context.range:clear()
+        if done_callback then done_callback() end
+      end
 
       -- Keep status visible for queued work too. Statusline counts all visual
       -- requests as "Implementing (n)" while this buffer drains FIFO.
-      Queue.enqueue(context.buffer, function(done)
+      local cancel_queued
+      context._cancel_queued = function()
+        if not cancel_queued or not cancel_queued() then return false end
+        state.tracking:complete(context)
+        finish()
+        return true
+      end
+      cancel_queued = Queue.enqueue(context.buffer, function(done)
+        done_callback = done
+        context._cancel_queued = nil
+        context:set_progress("Preparing implementation")
         context:start(user, {
           on_stdout = function(line)
             top_status:push(line)
             bottom_status:push(line)
           end,
           on_complete = function(status, response)
-            local function finish()
-              top_status:stop()
-              bottom_status:stop()
-              Statusline.stop(context)
-              context.range:clear()
-              done()
-            end
-
             if status ~= "success" then
               local details = vim.trim(response or "")
               local message = "Agent-Smith request " .. status

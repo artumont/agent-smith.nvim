@@ -19,19 +19,28 @@ M.__index = M
 function M.new()
   return setmetatable({
     history = {},   -- Completed requests
-    active = {},    -- In-flight requests (keyed by xid)
+    active = {},    -- Provider-running requests (keyed by xid)
+    queued = {},    -- Requests waiting for a per-buffer queue slot
   }, M)
 end
 
---- Start tracking a request.
+--- Track a request waiting for execution.
+---@param prompt table Prompt object with xid field
+function M:queue(prompt)
+  self.queued[prompt.xid] = prompt
+end
+
+--- Start tracking a provider-running request.
 ---@param prompt table Prompt object with xid field
 function M:track(prompt)
+  self.queued[prompt.xid] = nil
   self.active[prompt.xid] = prompt
 end
 
---- Mark a request as completed (move from active to history).
+--- Mark a request as completed (move from active or queue to history).
 ---@param prompt table Prompt object with xid field
 function M:complete(prompt)
+  self.queued[prompt.xid] = nil
   self.active[prompt.xid] = nil
   table.insert(self.history, prompt)
 end
@@ -52,9 +61,18 @@ end
 
 --- Cancel all in-flight requests.
 function M:stop_all_requests()
-  for _, p in pairs(self.active) do
-    p:cancel()
-  end
+  local requests = self:pending()
+  for _, prompt in ipairs(requests) do prompt:cancel() end
+end
+
+--- Return queued and active requests in creation order.
+---@return table[] requests
+function M:pending()
+  local requests = {}
+  for _, prompt in pairs(self.queued) do table.insert(requests, prompt) end
+  for _, prompt in pairs(self.active) do table.insert(requests, prompt) end
+  table.sort(requests, function(a, b) return a.started_at < b.started_at end)
+  return requests
 end
 
 --- Clear request history.

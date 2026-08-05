@@ -2,6 +2,7 @@
 :AgentSmithInfo	agent-smith.txt	/*:AgentSmithInfo*
 :AgentSmithLogs	agent-smith.txt	/*:AgentSmithLogs*
 :AgentSmithMultiFile	agent-smith.txt	/*:AgentSmithMultiFile*
+:AgentSmithProgress	agent-smith.txt	/*:AgentSmithProgress*
 :AgentSmithSearch	agent-smith.txt	/*:AgentSmithSearch*
 :AgentSmithTutorial	agent-smith.txt	/*:AgentSmithTutorial*
 :AgentSmithVibe	agent-smith.txt	/*:AgentSmithVibe*
