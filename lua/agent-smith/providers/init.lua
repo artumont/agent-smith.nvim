@@ -151,6 +151,10 @@ local function sandbox_command(command, context)
     "bwrap",
     "--die-with-parent",
     "--bind", "/", "/",
+    -- `--bind / /` can leave host device nodes unusable in Bubblewrap's mount
+    -- namespace. Create standard writable devices so Git and provider CLIs can
+    -- use /dev/null for config and command I/O.
+    "--dev", "/dev",
     "--ro-bind", sandbox.project_root, sandbox.project_root,
     "--chdir", context.cwd or sandbox.root,
     "--",

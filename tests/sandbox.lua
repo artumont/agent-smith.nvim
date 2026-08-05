@@ -89,7 +89,8 @@ if vim.fn.executable("bwrap") == 1 then
     local source = vim.fn.shellescape(original)
     return {
       "sh", "-c",
-      "if printf escaped > " .. source .. "; then exit 90; fi; "
+      "if ! : > /dev/null; then exit 91; fi; "
+        .. "if printf escaped > " .. source .. "; then exit 90; fi; "
         .. "printf sandbox > main.lua; printf ok",
     }
   end
