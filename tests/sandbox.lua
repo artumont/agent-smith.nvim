@@ -31,6 +31,7 @@ local provider_sandbox
 local provider = {}
 function provider:make_request(_, context, observer)
   observer.on_start()
+  assert(context.response_idle_timeout_ms == 2000, "search idle timeout was not configured")
   assert(context.cwd ~= project, "provider cwd was original project")
   assert(read(vim.fs.joinpath(context.cwd, "main.lua")) == "return 'original'")
   write(vim.fs.joinpath(context.cwd, "main.lua"), "return 'provider mutation'")

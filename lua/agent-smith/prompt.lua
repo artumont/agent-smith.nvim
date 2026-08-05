@@ -267,6 +267,13 @@ function M:start(user_prompt, observer)
 	local query = table.concat(self.agent_context, "\n")
 	local provider = assert(self._state:active_provider(), "Agent-Smith provider not configured")
 
+	-- Text-response operations must finish after provider output goes idle. Some
+	-- agent CLIs leave helper pipes open after their final answer, otherwise
+	-- keeping search, visual edits, and tutorials stuck in "Working".
+	if self.operation ~= "vibe" and not self.response_idle_timeout_ms then
+		self.response_idle_timeout_ms = 2000
+	end
+
 	-- Send to provider (async, non-blocking)
 	provider:make_request(query, self, {
 		on_start = function()
