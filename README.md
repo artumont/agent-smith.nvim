@@ -144,7 +144,7 @@ Default keymaps:
 | Provider | CLI | Status |
 | --- | --- | --- |
 | `OpenCodeProvider` | `opencode` | Tested |
-| `PiProvider` | `pi` | Tested |
+| `PiProvider` | `pi` | Tested; Semi-broken |
 | `ClaudeCodeProvider` | `claude` | Should work; unverified |
 | `CursorAgentProvider` | `cursor-agent` | Should work; unverified |
 | `GeminiCLIProvider` | `gemini` | Should work; unverified |
