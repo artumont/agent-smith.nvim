@@ -1,0 +1,361 @@
+*agent-smith.txt*       An AI agent that owns its own loop      *agent-smith*
+
+                            AGENT-SMITH.NVIM
+
+agent-smith is an AI agent for Neovim that talks to the model, runs the tools,
+enforces what may be touched, and shows you what happened. It is not a wrapper
+around a CLI agent: it owns the loop and the tools.
+See |agent-smith-design|.
+
+Two modes, and no chat. You either select code and ask for a change, or hand over
+a task and approve a plan.
+
+    Inline      edit one region of one buffer                |agent-smith-inline|
+    Vibe        plan, approve, execute, review               |agent-smith-vibe|
+
+Pre-1.0, and a rewrite in progress. Nothing from the earlier CLI-wrapper
+implementation survives. Linux only for v1.
+
+==============================================================================
+CONTENTS                                            *agent-smith-contents*
+
+    Requirements                |agent-smith-requirements|
+    Setup                       |agent-smith-setup|
+    Credentials                 |agent-smith-credentials|
+    Model and provider          |agent-smith-picking|
+    Inline mode                 |agent-smith-inline|
+    Vibe mode                   |agent-smith-vibe|
+    Keys and commands           |agent-smith-keys|
+    Options                     |agent-smith-options|
+    Providers                   |agent-smith-providers|
+    What is enforced            |agent-smith-enforcement|
+    Health                      |agent-smith-health|
+    Development                 |agent-smith-development|
+    Design                      |agent-smith-design|
+    License                     |agent-smith-license|
+
+==============================================================================
+REQUIREMENTS                                    *agent-smith-requirements*
+
+                                                        *agent-smith-neovim*
+Neovim 0.10 or newer. Older versions lack `vim.json` and `vim.system`.
+
+                                                        *agent-smith-linux*
+Linux. The process sandbox uses bubblewrap, and this is the only platform it
+has been built for.
+
+Required:
+    curl            Carries every request.
+    git             Makes the clone vibe mode works in.
+    openssl         Reads and writes a stored credential.
+
+Optional:
+    bwrap           bubblewrap. Without it, the `bash` tool is disabled.
+    rg              ripgrep. Without it, `grep` and `glob` fall back to
+                    slower built-ins.
+
+`:checkhealth agent-smith` reports all of the above. See |agent-smith-health|.
+
+==============================================================================
+SETUP                                                  *agent-smith-setup*
+
+Nothing loads on its own. There is no `plugin/` directory, so you must call
+`setup()`:
+
+>lua
+    require("agent-smith").setup({
+      provider = "commandcode",
+      model = "deepseek/deepseek-v4-flash",
+    })
+<
+
+`provider` names a preset (|agent-smith-providers|) and `model` is an id that
+provider actually serves. Neither is guessed, and there is deliberately no
+default model: a wrong id fails with the vendor's own message rather than a
+confusing error here.
+
+Models are fetched from the provider rather than catalogued, so they do not go
+stale. See `spec/decisions/0012-models-are-fetched-not-catalogued.md`.
+
+The returned table is the module, so calls can be chained. `setup()` validates
+the configuration and raises on a bad one rather than failing later.
+
+                                                      *agent-smith-credentials*
+==============================================================================
+CREDENTIALS
+
+The quickest way is the command. It asks, checks the key against the provider,
+and stores it encrypted: >vim
+
+    :Smith setup                    " asks which provider, then the key
+    :Smith setup commandcode        " or name the provider up front
+<
+Nothing is written if the provider rejects the key, so a typo cannot replace a
+working credential with a broken one.
+
+Or export the provider's variable, which stores nothing at all: >sh
+
+    export CMD_API_KEY="..."         "commandcode"
+    export OPENCODE_API_KEY="..."    "zen" and "go" share one
+<
+A variable takes precedence over the store, so a stale export in a shell profile
+will quietly shadow a credential stored later. |:Smith| setup warns when it
+notices one.
+
+or call the store directly, which encrypts at rest. A plain `auth.json` in a
+config directory is one `git add -A` away from being published, which is the
+accident this prevents.
+
+>lua
+    local store = require("agent-smith.auth").new()
+    store:set("commandcode", "your-key-here")
+    store:get("commandcode")    -- "your-key-here"
+    store:list()                -- { "commandcode" }
+    store:remove("commandcode")
+<
+
+Two files, deliberately in different trees:
+
+                                                    *agent-smith-auth-paths*
+    ~/.config/agent-smith/auth.json            encrypted
+    ~/.local/share/nvim/agent-smith/auth.key   the key
+
+The split is the decision. The encrypted file belongs in a config tree, but
+**not** Neovim's own `~/.config/nvim`, which is the tree people keep under
+version control.
+
+What this buys, and what it does not: it stops a credential being swept into a
+commit, a backup, or a pasted config. It does not stop anyone who can read the
+key file, and no arrangement of two local files could. Losing the key means
+losing the credential; there is no recovery and no export, by construction.
+
+Override either path with `auth.file` and `auth.key_file`
+(|agent-smith-options|).
+
+==============================================================================
+INLINE MODE                                         *agent-smith-inline*
+
+                                                                 *<Leader>as*
+1. Select lines in visual mode.
+2. Press |<Leader>as|. A prompt opens in a floating window, in insert mode.
+3. Type an instruction. `:w` sends it. `q` or `:q` closes without sending.
+4. A status appears at the top of your selection while it works.
+5. The change lands in the **buffer**, not on disk.
+
+Because the change is a buffer edit and not a write, saving is what accepts it
+and `u` reverts the whole turn. There is no separate preview step: the buffer is
+the preview.
+
+Writes are bounded to the selected lines. A correct change that needs somewhere
+else is **escalated** to you with the agent's reason rather than refused or
+applied silently.
+
+From Lua:
+
+>lua
+    require("agent-smith").inline()
+    require("agent-smith").inline({ instruction = "add a docstring" })
+<
+
+`inline()` returns a session handle, or `nil` and a reason. It returns
+immediately, because the prompt is a window and the answer arrives later.
+
+==============================================================================
+VIBE MODE                                             *agent-smith-vibe*
+
+                                                                 *<Leader>av*
+Four phases, each a stopping point.
+
+1. Plan. Read-only. The agent investigates and declares the ordered steps and
+   every file it intends to modify. It is given no tool that can change
+   anything, which is stronger than a policy that refuses.
+2. Approve. The plan opens in a window listing the steps and the file scope.
+   `a` accepts, `d` denies. Denying ends the request.
+3. Execute. A fresh clone is made from committed state and the work happens
+   there. Writes outside the approved file list are refused and recorded, not
+   applied, and reported to you.
+4. Review. The clone's diff opens, coloured, with any refusals listed above it.
+   `a` applies it to your repository, `d` discards the clone.
+
+The clone is a real `git clone`, not a `git worktree`, because linked worktrees
+share the parent repository's hooks and an agent with write access there can
+install one that later runs outside any sandbox.
+
+Two consequences worth knowing:
+    - Execution sees committed state, so uncommitted work is not carried over.
+    - A bad run costs a `rm -rf` on a cache directory.
+
+From Lua:
+
+>lua
+    require("agent-smith").vibe()
+    require("agent-smith").vibe({ instruction = "rename parse to decode" })
+<
+
+==============================================================================
+KEYS AND COMMANDS                                     *agent-smith-keys*
+
+Keymaps, registered unless `default_keymaps` is false:
+
+    <Leader>as      visual  Inline edit on the selection
+    <Leader>av      normal  Vibe run
+    <Leader>ax      normal  Cancel the run in flight
+
+                                                                            *:Smith*
+:Smith [info]           Version, provider, model and sandbox state.
+:Smith setup [provider] Store a credential, interactively.
+:Smith model [provider] Pick a model, for this session.
+:Smith provider         Pick a provider, for this session.
+:Smith version          Version only.
+
+Choosing a model or a provider                            *agent-smith-picking*
+
+`setup()` is where a provider and a model are written down, but neither has to be
+typed to be changed. `:Smith model` lists the provider's own catalogue — each
+line saying which API the model answers on and how much context it has — so
+anything offered is routable by construction. `:Smith provider` lists the presets
+and whether each has a credential.
+
+Both choices apply to **the current session only** and are written nowhere. Your
+configuration keeps meaning exactly what it says, and restarting Neovim goes back
+to it. `:Smith info` marks a model that came from a picker with `(this session)`,
+and both pickers offer a way back to what `setup()` configured.
+
+Choosing a provider also checks the current model against it, and opens the model
+picker when it does not belong there. A model id only means anything against the
+provider that serves it, so one command should not be able to leave you unable to
+run.
+
+While a prompt is open:
+    :w                  Send the instruction. An empty buffer cancels.
+    q, :q               Close without sending.
+
+While a decision window is open:
+    a, A                Accept.
+    d, D                Deny. Also `q`, <Esc> and <C-c>.
+                        Closing the window denies, so dismissing is not consent.
+
+Vibe shows its status in a floating panel in the corner of the screen, so it
+stays visible while you scroll or change buffers. Inline draws its status inside
+the buffer at the selection, because that is where you are already looking.
+
+==============================================================================
+OPTIONS                                             *agent-smith-options*
+
+    commands                boolean, default true
+        Register the |:Smith| command.
+
+    default_keymaps         boolean, default true
+        Register the keymaps above.
+
+    provider                string or table, default nil
+        A preset name, or a table with at least a `base_url`.
+
+    model                   string, default nil
+        Required for any run. There is no default on purpose.
+
+    sandbox.root            string, default stdpath("cache")/agent-smith/sandbox
+        Where clones are made. Must be absolute and outside the project.
+
+    sandbox.network         boolean, default false
+        Allow network access inside the sandbox.
+
+    sandbox.blacklist       list of Lua patterns
+        Refused before execution. **A guardrail, not a boundary**: every entry
+        can be bypassed by a shell. See |agent-smith-enforcement|.
+
+    progress.position       "below" or "above", default "below"
+        Where the inline status draws relative to the selection. Above marks
+        where the work begins; below never moves the lines being worked on.
+        Vibe has no selection and uses a corner panel instead.
+
+    auth.file               string, default ~/.config/agent-smith/auth.json
+    auth.key_file           string, default ~/.local/share/nvim/agent-smith/auth.key
+        See |agent-smith-auth-paths|.
+
+==============================================================================
+PROVIDERS                                         *agent-smith-providers*
+
+Integrated providers are presets: a base URL, a credential and a routing rule.
+They are not separate transports.
+
+    zen             opencode.ai/zen/v1               OPENCODE_API_KEY
+    go              opencode.ai/zen/go/v1            OPENCODE_API_KEY
+    commandcode     api.commandcode.ai/provider/v1   CMD_API_KEY
+
+Three wire formats are implemented: `/chat/completions`, `/responses` (the
+GPT-family models on Zen and Go), and `/messages` (Claude on Command Code). A
+model is routed by what the provider publishes in its `supported_endpoints`.
+
+Verification status: `/chat/completions` is verified end to end against a live
+provider. `/responses` and `/messages` are implemented and tested against the
+documented protocol but have not been exercised against a live vendor. Details
+in `spec/providers.md`.
+
+==============================================================================
+WHAT IS ENFORCED                               *agent-smith-enforcement*
+
+Four independent layers, deliberately redundant:
+
+    Scope           which paths and ranges may be written
+                    Policy, in-process.
+
+    Blacklist       obvious accidents in commands
+                    **Guardrail only.** Trivially bypassed by a shell.
+
+    bwrap           what a command can reach
+                    Boundary, kernel-enforced.
+
+    Clone           what a vibe run can reach at all
+                    Boundary, and disposable.
+
+The sandbox is the boundary; the permission rules exist to catch mistakes and to
+keep you informed. Do not read `sandbox.blacklist` as security.
+
+==============================================================================
+HEALTH                                                 *agent-smith-health*
+
+>vim
+    :checkhealth agent-smith
+<
+
+Reports the Neovim version, the platform, each dependency in
+|agent-smith-requirements|, whether the configuration validates, and whether the
+sandbox root exists and is writable and outside the current project.
+
+==============================================================================
+DEVELOPMENT                                       *agent-smith-development*
+
+    make test          headless test suite
+    make run           Neovim with your config, plus the plugin
+    make run-clean     the plugin alone, when your config is the problem
+    make help          list targets
+
+`make run` loads your real configuration first and then the repository, so the
+plugin is exercised against the environment it actually runs in. A clean-room
+init is easier to reason about and hides every integration problem until release.
+
+Tests are headless Lua spec files under `test/spec/`.
+
+==============================================================================
+DESIGN                                                   *agent-smith-design*
+
+The reasoning is written down before the code, in `spec/` at the root of the
+repository. Start at `spec/README.md` for the index of decision records, or
+`spec/architecture.md` for the module map and the data flow.
+
+The two decisions that explain most of the rest:
+
+    The loop is owned here, not delegated to a CLI, because a wrapper cannot
+    intercept tool calls, cannot account for cost, and edits disk while the
+    buffer is what Neovim considers true.
+
+    The event contract is a typed, pure stream, so nothing in the loop knows
+    about a vendor or a buffer.
+
+==============================================================================
+LICENSE                                               *agent-smith-license*
+
+GPL-3.0. See the LICENSE file in the repository.
+
+ vim:tw=78:ts=8:ft=help:norl:

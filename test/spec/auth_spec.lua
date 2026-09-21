@@ -234,6 +234,25 @@ return function(t)
       t.matches(paths.auth_file, "agent%-smith/auth%.json$")
     end)
 
+    t.it("keeps the credential out of Neovim's own config directory", function()
+      -- This tree is the one that gets committed, so an encrypted file here is one
+      -- `git add -A` from being published. This is a regression that actually
+      -- happened: auth_file briefly pointed at stdpath("config"), which put the
+      -- credential inside the synced tree.
+      local nvim_config = vim.fs.normalize(vim.fn.stdpath("config"))
+      local auth_file = vim.fs.normalize(paths.auth_file)
+
+      t.eq(vim.startswith(auth_file, nvim_config .. "/"), false, "credential must not live in " .. nvim_config)
+    end)
+
+    t.it("uses agent-smith's own sibling directory", function()
+      -- Taking stdpath("config")'s parent rather than hardcoding ~/.config keeps
+      -- $XDG_CONFIG_HOME working.
+      local expected = vim.fs.joinpath(vim.fs.dirname(vim.fn.stdpath("config")), "agent-smith")
+      t.eq(Auth.config_root(), expected)
+      t.eq(paths.auth_file, vim.fs.joinpath(expected, "auth.json"))
+    end)
+
     t.it("puts the key outside the config directory", function()
       -- The config tree is the one people symlink into a dotfiles repository.
       -- If the key lived there too, the encryption would travel with it.

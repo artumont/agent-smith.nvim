@@ -22,6 +22,13 @@
 --- file lives in the *config* directory. That split is the point: the config
 --- tree is the one that gets symlinked into a repository. `key_is_tracked()`
 --- reports when that has been undone anyway.
+---
+--- **Which** config directory matters, and it is not Neovim's. `stdpath("config")`
+--- is `~/.config/nvim`, and that is precisely the tree people put under version
+--- control — so a credential kept there is one `git add -A` from being published,
+--- which is the whole problem. agent-smith therefore uses its own sibling
+--- directory, `~/.config/agent-smith/`, while the key stays in the data tree.
+--- See `M.config_root()`.
 
 local M = {}
 
@@ -32,13 +39,25 @@ M.ENVELOPE_VERSION = 1
 M.CIPHER = "aes-256-cbc"
 M.KDF = "pbkdf2"
 
+--- Where the encrypted file lives: agent-smith's own config directory.
+---
+--- Beside Neovim's rather than inside it. `stdpath("config")` is `~/.config/nvim`
+--- and that tree is routinely symlinked into a dotfiles repository — this
+--- machine's is — so anything kept there is one `git add -A` away from being
+--- published. Taking the parent keeps `$XDG_CONFIG_HOME` working instead of
+--- hardcoding `~/.config`.
+---@return string
+function M.config_root()
+  return vim.fs.joinpath(vim.fs.dirname(vim.fn.stdpath("config")), "agent-smith")
+end
+
 --- Where the two files live by default.
 ---
 --- Deliberately in different trees. See the note at the top of this module.
 ---@return table paths { auth_file = string, key_file = string }
 function M.default_paths()
   return {
-    auth_file = vim.fs.joinpath(vim.fn.stdpath("config"), "agent-smith", "auth.json"),
+    auth_file = vim.fs.joinpath(M.config_root(), "auth.json"),
     key_file = vim.fs.joinpath(vim.fn.stdpath("data"), "agent-smith", "auth.key"),
   }
 end
@@ -166,7 +185,8 @@ function Store:read(reload)
     return nil, "openssl is not installed, so the credential file cannot be decrypted"
   end
   if vim.fn.filereadable(self.key_file) ~= 1 then
-    return nil, ("no key file at %s, so %s cannot be decrypted"):format(self.key_file, self.auth_file)
+    return nil,
+      ("no key file at %s, so %s cannot be decrypted"):format(self.key_file, self.auth_file)
   end
 
   local ok, envelope = pcall(vim.json.decode, table.concat(vim.fn.readfile(self.auth_file), "\n"))
@@ -174,11 +194,12 @@ function Store:read(reload)
     return nil, ("%s is not a readable credential envelope"):format(self.auth_file)
   end
   if envelope.version ~= M.ENVELOPE_VERSION then
-    return nil, ("%s has envelope version %s, expected %s"):format(
-      self.auth_file,
-      tostring(envelope.version),
-      M.ENVELOPE_VERSION
-    )
+    return nil,
+      ("%s has envelope version %s, expected %s"):format(
+        self.auth_file,
+        tostring(envelope.version),
+        M.ENVELOPE_VERSION
+      )
   end
   if type(envelope.data) ~= "string" then
     return nil, ("%s has no encrypted payload"):format(self.auth_file)
@@ -186,10 +207,8 @@ function Store:read(reload)
 
   local completed = openssl({ "-d", "-" .. M.CIPHER, "-" .. M.KDF }, envelope.data, self.key_file)
   if completed.code ~= 0 then
-    return nil, ("could not decrypt %s: %s"):format(
-      self.auth_file,
-      vim.trim(completed.stderr or "no output")
-    )
+    return nil,
+      ("could not decrypt %s: %s"):format(self.auth_file, vim.trim(completed.stderr or "no output"))
   end
 
   local decoded, credentials = pcall(vim.json.decode, completed.stdout or "")
@@ -216,11 +235,8 @@ function Store:write(credentials)
     return false, key_error
   end
 
-  local completed = openssl(
-    { "-" .. M.CIPHER, "-" .. M.KDF, "-salt" },
-    vim.json.encode(credentials),
-    self.key_file
-  )
+  local completed =
+    openssl({ "-" .. M.CIPHER, "-" .. M.KDF, "-salt" }, vim.json.encode(credentials), self.key_file)
   if completed.code ~= 0 then
     return false,
       ("could not encrypt credentials: %s"):format(vim.trim(completed.stderr or "no output"))

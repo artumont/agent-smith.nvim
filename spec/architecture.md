@@ -19,6 +19,12 @@ lua/agent-smith/
   usage.lua             token accounting and cache hit rate
   outline.lua           symbol outlines, for tiered reads
 
+  providers/
+    base.lua            the provider contract and all shared behaviour
+    init.lua            registry and resolving facade
+    zen.lua  go.lua     OpenCode gateways
+    commandcode.lua     Command Code
+
   agent/
     events.lua          typed event schema — the core contract
     loop.lua            turn loop, dispatch, stop conditions, cancel
@@ -26,9 +32,11 @@ lua/agent-smith/
     scope.lua           the scope/permission object for a session
 
   transport/
-    openai_compat.lua   OpenAI-compatible SSE over curl
-    anthropic.lua       (later) Anthropic messages API
-    sse.lua             SSE line framing, shared
+    base.lua            streaming harness shared by every adapter
+    openai_compat.lua   chat completions
+    responses.lua       the OpenAI Responses API
+    anthropic.lua       (later) Anthropic Messages
+    sse.lua             SSE line framing
 
   tools/
     init.lua            assembles the tool set, bound to a project root
@@ -36,7 +44,8 @@ lua/agent-smith/
     paths.lua           root-relative path resolution and display
     read.lua            contents or an outline; prefers the buffer over disk
     grep.lua  glob.lua  repo-wide search, read-only
-    edit.lua            buffer-native, scope-enforced
+    edit.lua            scope-enforced; buffer-staged, or to disk in vibe
+    plan.lua            the plan phase's structured output
     bash.lua            bwrap-wrapped, blacklist guardrail
     diagnostics.lua     LSP output as tool_result
 
@@ -49,7 +58,11 @@ lua/agent-smith/
     vibe.lua            plan, approve, execute, review
 
   ui/
-    stream.lua  approval.lua  diff.lua  notifications.lua
+    prompt.lua          instruction entry, in a floating buffer
+    approval.lua        approving an escalated tool call
+    progress.lua        run status as virtual lines, for inline
+    panel.lua           run status as a floating corner panel, for vibe
+    diff.lua            reviewing a patch before it is applied
 ```
 
 ## Data flow

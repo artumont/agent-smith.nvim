@@ -49,6 +49,7 @@ by accident.
 | [0009](decisions/0009-linux-only-v1.md) | Linux only for v1 | Accepted |
 | [0010](decisions/0010-integrated-providers-are-presets.md) | Integrated providers are presets, not transports | Accepted |
 | [0011](decisions/0011-credentials-encrypted-at-rest.md) | Credentials are encrypted at rest | Accepted |
+| [0012](decisions/0012-models-are-fetched-not-catalogued.md) | Models are fetched, not catalogued | Accepted |
 
 ## Other documents
 

@@ -30,6 +30,13 @@ but encrypted at rest.
   *data* directory. **The split is the decision.** Putting them side by side
   would mean the encryption travels with the thing it is protecting, which is
   the entire failure mode being addressed.
+- **Which config directory:** agent-smith's own, `~/.config/agent-smith/`, and not
+  Neovim's. `stdpath("config")` is `~/.config/nvim`, which for many users *is* the
+  tree under version control — so the file that is safe to commit only because it
+  is encrypted would have been sitting in the one place most likely to be
+  committed. Found the hard way: `auth_file` briefly pointed there, and the
+  credential had to be moved out of a dotfiles-synced directory by hand. The
+  split above still holds; this only says which config tree it means.
 - **Envelope:** a small versioned JSON object, so a future crypto change fails
   with a clear message rather than an unexplained decrypt error.
 - **`key_is_tracked()`** reports when the key file has ended up inside a git

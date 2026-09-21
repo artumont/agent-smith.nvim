@@ -41,9 +41,11 @@ Command Code states the routing rule outright:
 So model-to-format routing is **data**, carried in the catalogue, rather than
 something the user has to know or the transport has to guess.
 
-Only the first format is implemented so far. Custom providers and the open
-models work today; GPT and Claude models on the gateways do not, and will fail
-until the other two adapters exist.
+Chat completions and the Responses API both have adapters. Custom providers, the
+open models and the GPT-family models all work. **Claude models on Command Code
+do not yet**: `/messages` is a different schema, and that adapter does not exist.
+A model whose only route is `/messages` is refused with a message naming the
+missing adapter rather than being sent to an endpoint that will reject it.
 
 ## Integrated providers
 
@@ -154,10 +156,20 @@ is guesswork.
 
 ## Streaming
 
-Every gateway supports `stream: true` with SSE, and all three report token usage
-at the end of a stream without opt-in:
+Every adapter is a translation layer over one shared harness
+(`lua/agent-smith/transport/base.lua`), which owns the curl invocation, SSE
+framing, streaming, error extraction and cancellation. An adapter declares an
+endpoint, a request body, and how to map one stream event onto typed events —
+which is where the two OpenAI formats differ most:
 
-- Chat Completions: a final `usage` chunk (Command Code); OpenAI proper requires
-  `stream_options.include_usage`
-- Responses: usage on the terminal `response.completed` event
-- Anthropic Messages: usage in `message_delta`
+| | Chat completions | Responses |
+|---|---|---|
+| Conversation | `messages` | `input`, plus a top-level `instructions` |
+| Tool definition | nested under `function` | flat |
+| Tool call | `tool_calls` in a message delta | a `function_call` **item** |
+| Tool result | a message with `role = "tool"` | a `function_call_output` item |
+| Text | `choices[].delta.content` | `response.output_text.delta` |
+| Usage | a final `usage` chunk | on `response.completed` |
+| Terminal | `data: [DONE]` | `response.completed` |
+
+Every gateway reports token usage at the end of a stream without opt-in.

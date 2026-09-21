@@ -37,14 +37,56 @@ M.defaults = {
     network = false,
   },
 
+  --- Where a run's status draws, relative to the selection.
+  ---
+  --- "above" puts it at the top of the work area, where the change begins.
+  --- "below" puts it under the last selected line, so it never moves the lines
+  --- being worked on as it appears.
+  ---
+  --- Both are defensible and it comes down to what the user is reading. Either
+  --- way the status is anchored to the selection, so it cannot end up somewhere
+  --- the user is not looking.
+  ---
+  --- Only inline has a selection to be above or below; vibe draws at the top of
+  --- whatever buffer is current.
+  progress = {
+    position = "below",
+  },
+
+  --- Which provider preset to use, and which model.
+  ---
+  --- There is deliberately no default model: it depends on what the account can
+  --- reach, and guessing one fails at request time with a vendor error rather
+  --- than here. A call that needs a model says so.
+  provider = nil,
+  model = nil,
+
   --- Credential storage.
   ---
   --- Omitting either path uses agent-smith.auth.default_paths(), which keeps the
-  --- decryption key in the data directory while the encrypted file sits in the
-  --- config directory. That split is deliberate: the config tree is the one that
-  --- tends to be symlinked into a dotfiles repository. See agent-smith.auth.
+  --- decryption key in the data directory while the encrypted file sits in
+  --- agent-smith's **own** config directory, `~/.config/agent-smith/`.
+  ---
+  --- That split is deliberate, and so is the location: the config tree is the one
+  --- that tends to be symlinked into a dotfiles repository, but Neovim's own
+  --- `~/.config/nvim` is the specific tree people commit. Putting the credential
+  --- there would be the exact accident the encryption exists to prevent. See
+  --- agent-smith.auth.
   auth = {},
 }
+
+--- Copy a value, deeply for tables.
+---
+--- Nested tables are copied rather than shared. Handing back the same `sandbox`
+--- table that lives in `M.defaults` would mean a caller adding one blacklist
+--- entry rewrites the defaults for every later `resolve()` in the process — the
+--- kind of bug that shows up as a test passing alone and failing in a suite.
+local function copy(value)
+  if type(value) == "table" then
+    return vim.deepcopy(value)
+  end
+  return value
+end
 
 --- Recursively merge `overrides` into `base`, returning a new table.
 ---
@@ -53,13 +95,13 @@ M.defaults = {
 local function merge(base, overrides)
   local merged = {}
   for key, value in pairs(base) do
-    merged[key] = value
+    merged[key] = copy(value)
   end
   for key, value in pairs(overrides or {}) do
     if type(value) == "table" and type(merged[key]) == "table" and not vim.islist(value) then
       merged[key] = merge(merged[key], value)
     else
-      merged[key] = value
+      merged[key] = copy(value)
     end
   end
   return merged
@@ -104,10 +146,20 @@ function M.validate(config)
     end
   end
 
+  local progress = config.progress
+  if type(progress) ~= "table" then
+    return false, "progress must be a table"
+  end
+  if progress.position ~= "above" and progress.position ~= "below" then
+    return false,
+      ('progress.position must be "above" or "below", got %s'):format(tostring(progress.position))
+  end
+
   local auth = config.auth
   if type(auth) ~= "table" then
     return false, "auth must be a table"
   end
+
   for _, field in ipairs({ "file", "key_file" }) do
     local path = auth[field]
     if path ~= nil then
@@ -118,6 +170,17 @@ function M.validate(config)
         return false, ("auth.%s must be an absolute path, got %s"):format(field, path)
       end
     end
+  end
+
+  if
+    config.provider ~= nil
+    and type(config.provider) ~= "string"
+    and type(config.provider) ~= "table"
+  then
+    return false, "provider must be a preset name or a declaration table"
+  end
+  if config.model ~= nil and (type(config.model) ~= "string" or config.model == "") then
+    return false, "model must be a non-empty string"
   end
 
   return true

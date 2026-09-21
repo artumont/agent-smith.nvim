@@ -1,10 +1,22 @@
 --- The edit tool: replace a range of lines in a file.
 ---
---- Buffer-native, deliberately. The edit lands in a Neovim buffer and the
---- buffer is left modified; nothing is written to disk. Accepting the change is
---- a save, rejecting it is a buffer-revert, and that is what makes the approval
---- story real rather than cosmetic. See
+--- Buffer-native by default, deliberately. The edit lands in a Neovim buffer and
+--- the buffer is left modified; nothing is written to disk. Accepting the change
+--- is a save, rejecting it is a buffer-revert, and that is what makes the
+--- approval story real rather than cosmetic. See
 --- spec/decisions/0005-permission-model.md.
+---
+--- `write_through`, for vibe. In a vibe run the clone is the staging area, so the
+--- buffer is not where a change waits for acceptance — `git diff` is. That
+--- inverts the reason for being buffer-native, so the tool takes the mode's answer
+--- instead of assuming one. It is not optional in that mode either: `bash` runs
+--- against the clone's files, so an edit that stayed in a buffer would leave the
+--- agent testing code it had not actually changed.
+---
+--- `allow_create`, also for vibe, because a plan may declare a file it will
+--- create. Creation writes straight to disk rather than going through a buffer: a
+--- fresh Neovim buffer always holds one empty line, which would land in the new
+--- file as a stray blank line and would then be what a later `read` reported.
 ---
 --- Undo grouping
 ---
@@ -65,10 +77,26 @@ local function buffer_for(absolute)
 end
 
 --- Build the edit tool bound to a project root.
----@param options table { root: string }
+---@param options table
+---   - root: string             Project root.
+---   - write_through: boolean|nil  Write each edit to disk. For vibe.
+---   - allow_create: boolean|nil   Permit a path that does not exist yet.
 ---@return table spec
 function M.tool(options)
   local root = assert(options.root, "the edit tool needs a root")
+  local write_through = options.write_through == true
+  local allow_create = options.allow_create == true
+
+  local description = "Replace a range of lines in a file."
+  if write_through then
+    description = description .. " The change is written to disk immediately."
+  else
+    description = description
+      .. " Applies to an unsaved buffer; nothing is written to disk until the file is saved."
+  end
+  if allow_create then
+    description = description .. " A path that does not exist is created."
+  end
 
   -- Undo grouping state. Reset whenever the turn changes.
   local last_turn = nil
@@ -76,7 +104,7 @@ function M.tool(options)
 
   return {
     name = "edit",
-    description = "Replace a range of lines in a file. Applies to an unsaved buffer; nothing is written to disk until the file is saved.",
+    description = description,
     access = Registry.WRITE,
     parameters = {
       path = {
@@ -119,8 +147,33 @@ function M.tool(options)
       local end_row = math.floor(arguments.end_row)
 
       if vim.fn.filereadable(absolute) ~= 1 then
-        -- Creating files is a plan-level concern, not a line-range edit.
-        return Registry.error(("%s does not exist"):format(shown))
+        if not allow_create then
+          -- Creating files is a plan-level concern, not a line-range edit.
+          return Registry.error(("%s does not exist"):format(shown))
+        end
+
+        -- A file the plan declared. It is empty, so an insertion is the only
+        -- edit that can refer to lines that exist; anything else names lines
+        -- that are not there.
+        if not (start_row == 1 and end_row == 0) then
+          return Registry.error(
+            ("%s does not exist yet, so it is empty; create it with start_row 1 and end_row 0"):format(shown)
+          )
+        end
+
+        local replacement = to_lines(arguments.text)
+        local parent = vim.fs.dirname(absolute)
+        local made = vim.fn.mkdir(parent, "p")
+        if made == 0 and vim.fn.isdirectory(parent) ~= 1 then
+          return Registry.error(("could not create the directory %s"):format(parent))
+        end
+
+        local wrote, write_error = pcall(vim.fn.writefile, replacement, absolute)
+        if not wrote then
+          return Registry.error(("could not create %s: %s"):format(shown, tostring(write_error)))
+        end
+
+        return Registry.ok(("%s: created with %d line(s)"):format(shown, #replacement))
       end
 
       if end_row < start_row - 1 then
@@ -181,12 +234,27 @@ function M.tool(options)
       last_turn = context.turn
       last_buffer = buffer
 
+      -- After the buffer, so a write failure leaves the buffer showing what was
+      -- intended and the caller hears about it, rather than the two silently
+      -- disagreeing.
+      if write_through then
+        local wrote, write_error = pcall(vim.api.nvim_buf_call, buffer, function()
+          -- noautocmd because a filetype or formatter autocommand must not get
+          -- to rewrite what the model asked for.
+          vim.cmd("silent noautocmd write!")
+        end)
+        if not wrote then
+          return Registry.error(("%s: the edit applied but could not be written: %s"):format(shown, tostring(write_error)))
+        end
+      end
+
       local new_total = total - removed + #replacement
       local action = removed == 0 and ("inserted %d line(s) at line %d"):format(#replacement, start_row)
         or ("replaced lines %d-%d (%d) with %d line(s)"):format(start_row, end_row, removed, #replacement)
 
+      local state = write_through and "written to disk" or "unsaved"
       return Registry.ok(
-        ("%s: %s; buffer now has %d lines and is unsaved"):format(shown, action, new_total)
+        ("%s: %s; buffer now has %d lines and is %s"):format(shown, action, new_total, state)
       )
     end,
   }

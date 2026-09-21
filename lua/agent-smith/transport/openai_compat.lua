@@ -1,42 +1,33 @@
---- OpenAI-compatible chat completions, streamed over SSE.
+--- OpenAI-compatible chat completions, streamed.
 ---
 --- The first transport, for custom providers and for the open models on the
---- gateways. See spec/decisions/0008-transport-openai-compatible-first.md and
---- spec/decisions/0010-integrated-providers-are-presets.md. GPT-family models on
---- the gateways need `/responses` and Claude models need `/messages`; neither is
---- implemented yet.
+--- gateways (spec/decisions/0008-transport-openai-compatible-first.md).
+--- GPT-family models are served on the Responses API and Claude models on
+--- Anthropic Messages, which are separate adapters.
 ---
---- Two details that are easy to get wrong and are handled here rather than left
---- to the loop:
+--- This file is **translation only**. The curl invocation, SSE framing, streaming
+--- and cancellation live in agent-smith.transport.base. What is here is the wire
+--- body and the mapping from stream chunks to typed events.
 ---
----   - **Tool arguments stream as fragments.** `delta.tool_calls[].function.
----     arguments` arrives as partial JSON across many chunks, keyed by index.
----     The event schema promises the loop a complete decoded table, so the
----     fragments are reassembled and decoded here, and a `tool_use` is emitted
----     only once the stream ends.
----   - **The API key does not go in `argv`.** It is handed to `curl` through the
----     child process environment, because `argv` is world-readable via `ps` while
----     a process's environment is restricted to its owner. Verified by probe.
----
---- Assembling the request is a pure function (`wire_request`) so it can be
---- tested without a network, and the process spawn is injectable for the same
---- reason.
+--- The one thing the base cannot do for us: **tool arguments stream as
+--- fragments.** `delta.tool_calls[].function.arguments` arrives as partial JSON
+--- across many chunks, keyed by index. The event schema promises the loop a
+--- complete decoded table, so fragments are reassembled here and a `tool_use` is
+--- emitted only once the stream ends.
 
-local Sse = require("agent-smith.transport.sse")
+local Base = require("agent-smith.transport.base")
 local Events = require("agent-smith.agent.events")
 local Json = require("agent-smith.json")
 
 local M = {}
 
---- Name of the environment variable the key is passed in. Fixed, so the shell
---- string never has to interpolate a secret.
-M.TOKEN_ENV = "AGENT_SMITH_API_KEY"
+-- Re-exported so the harness knobs this adapter is configured by are reachable
+-- from here without a second require.
+M.TOKEN_ENV = Base.TOKEN_ENV
+M.DEFAULT_TIMEOUT_MS = Base.DEFAULT_TIMEOUT_MS
+M.DEFAULT_USER_AGENT = Base.DEFAULT_USER_AGENT
 
-M.DEFAULT_TIMEOUT_MS = 300000
-
---- Sent so the gateway sees a client that identifies itself, rather than a
---- generic HTTP library. OpenCode Go asks for this explicitly.
-M.DEFAULT_USER_AGENT = "agent-smith.nvim"
+M.ENDPOINT = "/chat/completions"
 
 --- Vendor finish reasons mapped onto the event schema's vocabulary.
 local FINISH_REASONS = {
@@ -45,23 +36,6 @@ local FINISH_REASONS = {
   length = "length",
   content_filter = "content_filter",
 }
-
---- Flatten an error value into a string, whatever shape it arrived in.
-local function error_message(err)
-  if type(err) == "string" then
-    return err
-  end
-  if type(err) == "table" then
-    if type(err.message) == "string" then
-      return err.message
-    end
-    local encoded = pcall(vim.json.encode, err)
-    if encoded then
-      return vim.json.encode(err)
-    end
-  end
-  return tostring(err)
-end
 
 --- Translate the neutral conversation into wire messages.
 ---
@@ -110,7 +84,8 @@ local function wire_messages(system, messages)
   return wire
 end
 
---- Wrap tool schemas in the shape chat completions expects.
+--- Wrap tool schemas in the shape chat completions expects: nested under
+--- `function`, unlike the Responses API where the same fields sit at the top.
 local function wire_tools(schemas)
   local tools = {}
   for _, schema in ipairs(schemas) do
@@ -149,343 +124,147 @@ function M.wire_request(options, request)
   return body
 end
 
---- Build the argv and environment for one request.
----
---- The body goes over stdin rather than `argv`, so a large conversation cannot
---- hit an argument-length limit.
----
---- Header values are passed to the shell as positional parameters and referenced
---- as `$1`, `$2`…, never interpolated into the script text. That means no value
---- has to be escaped to be safe, which matters because one of them is derived
---- from a filesystem path.
----
----@param options table
----   - base_url: string
----   - api_key: string
----   - token_env: string
----   - headers: table[]|nil  Extra headers, each { name, value }.
+--- Build the argv and environment for one request, on this adapter's endpoint.
 ---@return string[] command
 ---@return table env
 function M.build_command(options)
-  local headers = options.headers or {}
-
-  local placeholders = {}
-  for index = 1, #headers do
-    placeholders[index] = (' -H "$' .. index .. '"')
+  local fields = {}
+  for key, value in pairs(options) do
+    fields[key] = value
   end
+  fields.endpoint = fields.endpoint or M.ENDPOINT
+  return Base.build_command(fields)
+end
 
-  local script = table.concat({
-    "exec curl -sS -N --no-buffer --fail-with-body",
-    " -X POST " .. string.format("%q", options.base_url:gsub("/+$", "") .. "/chat/completions"),
-    ' -H "Content-Type: application/json"',
-    -- The $ and the name must both be inside the quotes, or the shell treats
-    -- the $ as literal and sends the variable name as the token.
-    ' -H "Authorization: Bearer $' .. options.token_env .. '"',
-    table.concat(placeholders),
-    " --data-binary @-",
-  })
+local function new_state()
+  return { tool_calls = {}, finish_reason = nil }
+end
 
-  local command = { "sh", "-c", script, "agent-smith" }
-  for _, header in ipairs(headers) do
-    if type(header.name) ~= "string" or not header.name:match("^[%w%-]+$") then
-      error("invalid header name: " .. tostring(header.name), 0)
+--- Map one decoded chunk onto typed events.
+---@return boolean terminal Unused: this adapter stops on [DONE] or exit.
+local function receive(state, chunk, emit)
+  if type(chunk.usage) == "table" then
+    local usage = chunk.usage
+    local fields = {}
+
+    if type(usage.prompt_tokens) == "number" then
+      fields.input_tokens = usage.prompt_tokens
     end
-    command[#command + 1] = ("%s: %s"):format(header.name, tostring(header.value))
+    if type(usage.completion_tokens) == "number" then
+      fields.output_tokens = usage.completion_tokens
+    end
+    if type(usage.prompt_tokens_details) == "table"
+      and type(usage.prompt_tokens_details.cached_tokens) == "number" then
+      fields.cache_read_tokens = usage.prompt_tokens_details.cached_tokens
+    end
+    if type(usage.completion_tokens_details) == "table"
+      and type(usage.completion_tokens_details.reasoning_tokens) == "number" then
+      fields.reasoning_tokens = usage.completion_tokens_details.reasoning_tokens
+    end
+
+    -- Only emit if something numeric was present: a usage event with no token
+    -- field is invalid by construction.
+    if next(fields) then
+      emit(Events.usage(fields))
+    end
   end
 
-  local env = { [options.token_env] = options.api_key }
-  return command, env
+  local choice = chunk.choices and chunk.choices[1]
+  if type(choice) ~= "table" then
+    return false
+  end
+
+  local delta = choice.delta or {}
+
+  if type(delta.content) == "string" and delta.content ~= "" then
+    emit(Events.text_delta(delta.content))
+  end
+
+  local reasoning = delta.reasoning_content or delta.reasoning
+  if type(reasoning) == "string" and reasoning ~= "" then
+    emit(Events.thinking_delta(reasoning))
+  end
+
+  if type(delta.tool_calls) == "table" then
+    for _, entry in ipairs(delta.tool_calls) do
+      local index = entry.index or 0
+      local slot = state.tool_calls[index] or { id = "", name = "", arguments = "" }
+
+      if type(entry.id) == "string" and entry.id ~= "" then
+        slot.id = entry.id
+      end
+
+      local fn = entry["function"]
+      if type(fn) == "table" then
+        if type(fn.name) == "string" and fn.name ~= "" then
+          slot.name = fn.name
+        end
+        if type(fn.arguments) == "string" then
+          -- Fragments, not a complete document.
+          slot.arguments = slot.arguments .. fn.arguments
+        end
+      end
+
+      state.tool_calls[index] = slot
+    end
+  end
+
+  if choice.finish_reason ~= nil then
+    state.finish_reason = choice.finish_reason
+  end
+
+  return false
+end
+
+--- Emit the reassembled tool calls, then the terminal event.
+local function finish(state, emit)
+  local indexes = {}
+  for index in pairs(state.tool_calls) do
+    indexes[#indexes + 1] = index
+  end
+  table.sort(indexes)
+
+  for _, index in ipairs(indexes) do
+    local call = state.tool_calls[index]
+
+    if call.id == "" or call.name == "" then
+      emit(Events.error(("a tool call arrived incomplete: id=%q name=%q"):format(call.id, call.name)))
+      return
+    end
+
+    local arguments = {}
+    if call.arguments ~= "" then
+      local decoded, parsed = pcall(vim.json.decode, call.arguments)
+      if not decoded or type(parsed) ~= "table" then
+        emit(
+          Events.error(
+            ("tool call %q had arguments that are not valid JSON: %s"):format(call.name, call.arguments)
+          )
+        )
+        return
+      end
+      arguments = parsed
+    end
+
+    emit(Events.tool_use(call.id, call.name, arguments))
+  end
+
+  emit(Events.done(FINISH_REASONS[state.finish_reason] or "complete"))
 end
 
 --- Build a transport.
----@param options table
----   - base_url: string       Required, e.g. "https://opencode.ai/zen/v1".
----   - api_key: string        Required.
----   - model: string          Required.
----   - include_usage: boolean Default true.
----   - timeout_ms: number     Default five minutes.
----   - user_agent: string|nil Sent as User-Agent. Identifies the client rather
----                            than looking like a generic HTTP library.
----   - session_header: string|nil  Header name to carry request.session in, for
----                            a gateway that uses it for cache routing. OpenCode
----                            Zen and Go want `x-opencode-session`; leaving it
----                            nil sends nothing.
----   - execute: function|nil  Process spawner, default vim.system. Injectable
----                            so the streaming path is testable without a net.
+---@param options table { base_url, api_key, model, include_usage?, session_header?,
+---   user_agent?, timeout_ms?, execute? }
 ---@return table transport { run = function(request, on_event) -> handle }
 function M.new(options)
-  assert(type(options) == "table", "the transport needs an options table")
-  assert(type(options.base_url) == "string" and options.base_url ~= "", "the transport needs a base_url")
-  assert(type(options.api_key) == "string" and options.api_key ~= "", "the transport needs an api_key")
-  assert(type(options.model) == "string" and options.model ~= "", "the transport needs a model")
-
-  local execute = options.execute or vim.system
-  local timeout_ms = options.timeout_ms or M.DEFAULT_TIMEOUT_MS
-  local user_agent = options.user_agent or M.DEFAULT_USER_AGENT
-  local session_header = options.session_header
-
-  local function run(request, on_event)
-    local body = M.wire_request(options, request)
-
-    local headers = { { name = "User-Agent", value = user_agent } }
-    if session_header and type(request.session) == "string" and request.session ~= "" then
-      headers[#headers + 1] = { name = session_header, value = request.session }
-    end
-
-    local command, env = M.build_command({
-      base_url = options.base_url,
-      api_key = options.api_key,
-      token_env = M.TOKEN_ENV,
-      headers = headers,
-    })
-
-    local parser = Sse.new()
-    local pending = {}
-    local raw = {}
-    local stderr = {}
-    local tool_calls = {}
-    local finish_reason = nil
-
-    local scheduled = false
-    local finished = false
-    local process = nil
-
-    local function emit(event)
-      on_event(event)
-    end
-
-    --- Emit the tool calls, then the terminal event. Idempotent.
-    local function finalize()
-      if finished then
-        return
-      end
-      finished = true
-
-      local indexes = {}
-      for index in pairs(tool_calls) do
-        indexes[#indexes + 1] = index
-      end
-      table.sort(indexes)
-
-      for _, index in ipairs(indexes) do
-        local call = tool_calls[index]
-
-        if call.id == "" or call.name == "" then
-          emit(
-            Events.error(
-              ("a tool call arrived incomplete: id=%q name=%q"):format(call.id, call.name)
-            )
-          )
-          return
-        end
-
-        local arguments = {}
-        if call.arguments ~= "" then
-          local decoded, parsed = pcall(vim.json.decode, call.arguments)
-          if not decoded or type(parsed) ~= "table" then
-            emit(
-              Events.error(
-                ("tool call %q had arguments that are not valid JSON: %s"):format(call.name, call.arguments)
-              )
-            )
-            return
-          end
-          arguments = parsed
-        end
-
-        emit(Events.tool_use(call.id, call.name, arguments))
-      end
-
-      emit(Events.done(FINISH_REASONS[finish_reason] or "complete"))
-    end
-
-    local function handle_event(sse_event)
-      if finished then
-        return
-      end
-
-      local data = sse_event.data
-      if data == "[DONE]" then
-        finalize()
-        return
-      end
-
-      local decoded, chunk = pcall(vim.json.decode, data)
-      if not decoded then
-        finished = true
-        emit(Events.error(("could not decode a stream chunk: %s"):format(tostring(chunk))))
-        return
-      end
-
-      if type(chunk) ~= "table" then
-        -- Keep-alives sometimes arrive as a bare JSON value.
-        return
-      end
-
-      if chunk.error then
-        finished = true
-        emit(Events.error(error_message(chunk.error)))
-        return
-      end
-
-      if type(chunk.usage) == "table" then
-        local usage = chunk.usage
-        local fields = {}
-
-        if type(usage.prompt_tokens) == "number" then
-          fields.input_tokens = usage.prompt_tokens
-        end
-        if type(usage.completion_tokens) == "number" then
-          fields.output_tokens = usage.completion_tokens
-        end
-        if type(usage.prompt_tokens_details) == "table"
-          and type(usage.prompt_tokens_details.cached_tokens) == "number" then
-          fields.cache_read_tokens = usage.prompt_tokens_details.cached_tokens
-        end
-        if type(usage.completion_tokens_details) == "table"
-          and type(usage.completion_tokens_details.reasoning_tokens) == "number" then
-          fields.reasoning_tokens = usage.completion_tokens_details.reasoning_tokens
-        end
-
-        -- Only emit if something numeric was actually present, since a usage
-        -- event with no token field is invalid by construction.
-        if next(fields) then
-          emit(Events.usage(fields))
-        end
-      end
-
-      local choice = chunk.choices and chunk.choices[1]
-      if type(choice) ~= "table" then
-        return
-      end
-
-      local delta = choice.delta or {}
-
-      if type(delta.content) == "string" and delta.content ~= "" then
-        emit(Events.text_delta(delta.content))
-      end
-
-      local reasoning = delta.reasoning_content or delta.reasoning
-      if type(reasoning) == "string" and reasoning ~= "" then
-        emit(Events.thinking_delta(reasoning))
-      end
-
-      if type(delta.tool_calls) == "table" then
-        for _, entry in ipairs(delta.tool_calls) do
-          local index = entry.index or 0
-          local slot = tool_calls[index] or { id = "", name = "", arguments = "" }
-
-          if type(entry.id) == "string" and entry.id ~= "" then
-            slot.id = entry.id
-          end
-
-          local fn = entry["function"]
-          if type(fn) == "table" then
-            if type(fn.name) == "string" and fn.name ~= "" then
-              slot.name = fn.name
-            end
-            if type(fn.arguments) == "string" then
-              -- Fragments, not a complete document.
-              slot.arguments = slot.arguments .. fn.arguments
-            end
-          end
-
-          tool_calls[index] = slot
-        end
-      end
-
-      if choice.finish_reason ~= nil then
-        finish_reason = choice.finish_reason
-      end
-    end
-
-    local function drain()
-      scheduled = false
-      if #pending == 0 then
-        return
-      end
-      local chunk = table.concat(pending)
-      pending = {}
-
-      for _, sse_event in ipairs(parser:feed(chunk)) do
-        handle_event(sse_event)
-      end
-    end
-
-    local function on_stdout(_, data)
-      if not data or data == "" then
-        return
-      end
-      raw[#raw + 1] = data
-      pending[#pending + 1] = data
-      if not scheduled then
-        scheduled = true
-        vim.schedule(drain)
-      end
-    end
-
-    local function on_stderr(_, data)
-      if data then
-        stderr[#stderr + 1] = data
-      end
-    end
-
-    --- Explain a failed curl run, preferring a structured vendor error.
-    local function explain_failure(result)
-      local body = parser:pending()
-      if body == "" then
-        body = table.concat(raw)
-      end
-
-      local decoded, parsed = pcall(vim.json.decode, body)
-      if decoded and type(parsed) == "table" and parsed.error then
-        return error_message(parsed.error)
-      end
-
-      local message = vim.trim(table.concat(stderr))
-      if message ~= "" then
-        return ("curl exited %s: %s"):format(tostring(result.code), message)
-      end
-
-      return ("curl exited %s with no error detail"):format(tostring(result.code))
-    end
-
-    local function on_exit(result)
-      vim.schedule(function()
-        drain()
-        if finished then
-          return
-        end
-        if result.code ~= 0 then
-          finished = true
-          emit(Events.error(explain_failure(result)))
-          return
-        end
-        finalize()
-      end)
-    end
-
-    process = execute(command, {
-      text = true,
-      stdin = Json.encode(body),
-      env = env,
-      stdout = on_stdout,
-      stderr = on_stderr,
-      timeout = timeout_ms,
-    }, on_exit)
-
-    return {
-      cancel = function()
-        if process and type(process.kill) == "function" then
-          pcall(function()
-            process:kill("sigterm")
-          end)
-        end
-      end,
-    }
-  end
-
-  return { run = run }
+  return Base.new({
+    endpoint = M.ENDPOINT,
+    options = options,
+    build_request = M.wire_request,
+    new_state = new_state,
+    receive = receive,
+    finish = finish,
+  })
 end
 
 return M

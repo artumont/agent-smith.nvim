@@ -94,8 +94,22 @@ cannot reach the best models is worse than a smaller catalogue that can.
 renames something, and the failure mode is a confusing `400` rather than a
 missing catalogue entry.
 
+## Amendment, 2026-09-21
+
+The model catalogue described above was implemented as a hardcoded table of ids
+taken from published documentation, and measuring it showed why that was wrong:
+CommandCode serves 55 of its 71 models on `/chat/completions`, and the table
+refused almost all of them.
+
+The list is now fetched from each provider instead
+([0012](0012-models-are-fetched-not-catalogued.md)). That removes the "catalogue will
+drift" cost recorded below, and leaves the rest of this decision intact: a
+provider is a preset with a base URL, a credential, and a way of establishing
+routing.
+
 ## Related
 
 - [0001](0001-own-the-agent-loop.md)
 - [0008](0008-transport-openai-compatible-first.md)
+- [0012](0012-models-are-fetched-not-catalogued.md) — supersedes the catalogue part
 - [../providers.md](../providers.md) — base URLs, credentials, routing table
