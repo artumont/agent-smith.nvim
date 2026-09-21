@@ -16,6 +16,7 @@ lua/agent-smith/
   auth.lua              encrypted credential storage
   json.lua              deterministic encoding for wire bodies
   session.lua           stable session id for prompt-cache routing
+  usage.lua             token accounting and cache hit rate
   outline.lua           symbol outlines, for tiered reads
 
   agent/

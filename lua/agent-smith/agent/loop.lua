@@ -25,6 +25,7 @@
 --- silence is not consent.
 
 local Events = require("agent-smith.agent.events")
+local Usage = require("agent-smith.usage")
 
 local M = {}
 
@@ -98,16 +99,10 @@ function M.run(options)
     result.usage = state.usage
     result.cancelled = state.cancelled
     result.turns = turn
+    -- Rendered here so a caller has something to show without reimplementing
+    -- the arithmetic. Cost is not included: that needs per-model prices.
+    result.summary = Usage.render(state.usage, { turns = turn })
     on_done(result)
-  end
-
-  local function accumulate_usage(event)
-    for _, field in ipairs(Events.token_fields) do
-      local value = event[field]
-      if type(value) == "number" then
-        state.usage[field] = (state.usage[field] or 0) + value
-      end
-    end
   end
 
   local next_turn
@@ -259,7 +254,7 @@ function M.run(options)
       elseif event.type == "tool_use" then
         current.tool_uses[#current.tool_uses + 1] = event
       elseif event.type == "usage" then
-        accumulate_usage(event)
+        Usage.add(state.usage, event)
       elseif event.type == "done" then
         current.ended = true
         current.reason = event.reason
