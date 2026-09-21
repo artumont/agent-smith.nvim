@@ -8,8 +8,7 @@ local Config = require("agent-smith.config")
 
 local M = {}
 
---- Plugin version. Pre-1.0 while the rewrite is in progress.
-M.version = "0.2.0-dev"
+M.version = "0.2.0"
 
 --- Resolved configuration. Nil until setup() is called.
 M.config = nil
