@@ -1,276 +1,297 @@
 # agent-smith.nvim
 
-Neovim AI agent built for control and power.
+An AI agent for Neovim that **owns its own loop**: it talks to the model, runs
+the tools, enforces what may be touched, and shows you what happened. It is not a
+wrapper around a CLI agent.
 
-Agent-Smith provides bounded visual edits, structured multi-file changes with
-approval, fast ripgrep code search, tutorials, and sandboxed Vibe sessions.
+Two modes, no chat. You select code and ask for a change, or you hand it a task
+and approve a plan.
 
-Supports OpenCode, Claude Code, Cursor Agent, Gemini CLI, Kiro CLI, and
-[pi](https://github.com/badlogic/pi-mono).
+- **Inline** — edit one region of the current buffer.
+- **Vibe** — plan, approve, execute in a disposable clone, review the diff.
 
-## Installation
-
-Using [lazy.nvim](https://github.com/folke/lazy.nvim)
-
-```lua
-{
-  "artumont/agent-smith.nvim",
-  opts = {},
-}
-```
-
-Using [packer.nvim](https://github.com/wbthomason/packer.nvim)
-
-```lua
-use {
-  "artumont/agent-smith.nvim",
-  config = function()
-    require("agent-smith").setup()
-  end,
-}
-```
-
-Completion integrations are optional. Install `nvim-cmp` or `blink.cmp` only if
-you choose `completion.source = "cmp"` or `completion.source = "blink"`.
-
-## Setup
-
-```lua
-local smith = require("agent-smith")
-
-smith.setup({
-  -- OpenCodeProvider is the default.
-  provider = smith.Providers.OpenCodeProvider,
-
-  -- Omit to use selected provider's default model.
-  -- model = "provider/model",
-
-  completion = {
-    source = "native", -- "native" | "cmp" | "blink"
-    custom_rules = {},
-  },
-
-  -- Context files discovered from current file toward git root.
-  md_files = { "AGENTS.md" },
-
-  -- Disposable provider workspaces. Must be absolute and outside project.
-  tmp_dir = "/tmp/nvim/agent-smith",
-
-  -- Default keymaps are enabled unless set to false.
-  default_keymaps = true,
-})
-```
-
-Default keymaps:
-
-| Mode | Key | Operation |
-| --- | --- | --- |
-| Visual | `<leader>as` | Visual edit |
-| Visual | `<leader>aS` | Multi-file edit |
-| Normal | `<leader>af` | Ripgrep code search |
-| Normal | `<leader>av` | Vibe mode |
-| Normal | `<leader>ax` | Cancel all requests |
-| Normal | `<leader>ar` | Request progress |
-
-## Features
-
-- **Visual Selection Edits**: Select code and provide instructions. The
-  response replaces the selected range. Detected imports are routed to the
-  file's import section.
-
-- **Disposable Request Sandboxes**: Every provider request runs from a unique
-  project copy under `tmp_dir`. Agent-Smith discards request sandboxes after
-  responses and applies only parsed, reviewed output. On Linux with Bubblewrap
-  (`bwrap`), canonical project path is mounted read-only inside provider
-  process, blocking writes through that path even when model invokes mutating
-  tools. Without
-  Bubblewrap, project-relative writes stay in disposable copy, but provider CLI
-  retains its normal host permissions.
-
-- **Multi-File Edits**: Ask for changes across files using the structured
-  `<FILE_CHANGE>` / `<CONTENT>` response format. Each proposed file opens in an
-  approval window before it is written.
-
-- **Request Progress**: Open live floating view with `<leader>ar` or
-  `smith.progress()`. It shows queued implementations, Vibe phase, elapsed
-  time, and latest provider stdout. Visual edits also render latest stdout above
-  inline `Implementing` marker. Use `q`/`<Esc>` to close, `r` to refresh, or
-  `x` to cancel all tracked requests.
-
-- **Codebase Search**: AI converts natural-language request into a small set of
-  PCRE2 patterns from isolated empty workspace; local `rg` then finds every
-  project match. Results open through Telescope or fzf-lua, with quickfix fallback.
-
-- **Sandboxed Vibe**: Run a two-phase workflow in a temporary project copy.
-  The model first returns a plan and editable file scope. After plan approval,
-  the sandbox is recreated from the original files, execution happens inside
-  that sandbox, and only approved in-scope differences are offered for review.
-
-- **Plan Review**: Review planned files and implementation steps before
-  execution. Press `<CR>` to approve or `q`/`<Esc>` to cancel.
-
-- **File Change Approval**: Review unified diffs or toggle to complete proposed
-  content with `<Tab>`. Approve with `<CR>`, skip with `q`/`<Esc>`, or skip all
-  remaining changes with `Q`.
-
-- **New and Deleted Files in Vibe**: Vibe proposals can create, modify, or
-  delete files. Changes outside the approved plan scope are ignored and
-  reported.
-
-- **Prompt References**: Type `#` for configured `SKILL.md` rules or `@` for
-  project files. Selected references are resolved and injected into the prompt.
-
-- **Project Context**: `AGENTS.md` and other configured markdown files are
-  discovered from the current file toward the git root and added to prompts.
-
-- **Completion Backends**: Use native Neovim completion, `nvim-cmp`, or
-  `blink.cmp` for `#` and `@` prompt references.
-
-- **Tutorial Generation**: Generate Markdown tutorials and display them in a
-  split window.
-
-- **Request Cancellation**: Stop all in-flight provider processes with
-  `smith.stop_all_requests()`.
-
-- **Request History**: Browse completed request logs with
-  `smith.view_logs()`.
-
-- **Statusline Activity**: Visual edits, codebase searches, and Vibe requests
-  expose an active spinner through `smith.statusline()`. When no statusline
-  consumer is detected, activity falls back to `vim.notify`.
-
-## Providers
-
-| Provider | CLI | Status |
-| --- | --- | --- |
-| `OpenCodeProvider` | `opencode` | Tested |
-| `PiProvider` | `pi` | Tested; Semi-broken |
-| `ClaudeCodeProvider` | `claude` | Should work; unverified |
-| `CursorAgentProvider` | `cursor-agent` | Should work; unverified |
-| `GeminiCLIProvider` | `gemini` | Should work; unverified |
-| `KiroProvider` | `kiro-cli` | Should work; unverified |
-
-Only OpenCode and Pi have been tested so far. Other provider adapters are
-implemented against the shared provider interface, but their current behavior
-is not verified by the maintainers.
-
-If you use another provider or platform, please verify the agent end to end
-and open a pull request with any fixes, compatibility notes, and test details.
-Contributions that improve support for untested providers are welcome.
-
-Switch providers or models at runtime:
-
-```lua
-smith.set_provider(smith.Providers.PiProvider)
-smith.set_model("provider/model")
-```
-
-If installed, Telescope and fzf-lua extensions also provide provider and model
-selection pickers. Pi models are discovered with `pi --list-models`. Telescope
-pickers are available directly as:
-
-```vim
-:Telescope agent_smith providers
-:Telescope agent_smith models
-```
-
-## Configuration
-
-```lua
-require("agent-smith").setup({
-  -- Default: OpenCodeProvider
-  provider = require("agent-smith").Providers.OpenCodeProvider,
-
-  -- Default: selected provider's default model
-  -- model = "provider/model",
-
-  logger = {
-    level = "warn",
-    path = nil, -- Optional log file path
-  },
-
-  completion = {
-    source = "native", -- "native" | "cmp" | "blink"
-    custom_rules = {}, -- Directories containing named SKILL.md rules
-  },
-
-  md_files = { "AGENTS.md" },
-
-  -- Disposable provider workspace root. Must be absolute and outside project.
-  tmp_dir = "/tmp/nvim/agent-smith",
-
-  default_keymaps = true,
-})
-```
-
-## Lua API
-
-Agent-Smith does not register `:AgentSmith...` Ex commands. Use the Lua API:
-
-| Function | Description |
-| --- | --- |
-| `smith.setup(opts?)` | Initialize the plugin |
-| `smith.visual(opts?)` | Edit the visual selection |
-| `smith.progress()` | Open live request-progress window |
-| `smith.multi_file(opts?)` | Request multi-file changes with approval |
-| `smith.search(opts?)` | Plan ripgrep patterns, then open local matches |
-| `smith.vibe(opts?)` | Run the sandboxed two-phase workflow |
-| `smith.tutorial(opts?)` | Generate a tutorial in a split |
-| `smith.stop_all_requests()` | Cancel in-flight requests |
-| `smith.clear_previous_requests()` | Clear request history |
-| `smith.set_model(model)` | Set the active model |
-| `smith.get_model()` | Get the active model |
-| `smith.set_provider(provider)` | Set the active provider |
-| `smith.get_provider()` | Get the active provider |
-| `smith.get_provider_name()` | Get the active provider name |
-| `smith.view_logs()` | Browse request history |
-| `smith.info()` | Show provider, model, and completed request count |
-| `smith.statusline()` | Return statusline text |
-| `smith.statusline_active()` | Return whether statusline text is active |
-
-Search and Vibe accept `additional_prompt` to skip their prompt window:
-
-```lua
-smith.search({ additional_prompt = "Find user creation handlers" })
-smith.vibe({ additional_prompt = "Analyze the authentication flow" })
-```
-
-## Extensions
-
-Optional integrations:
-
-- **Telescope**: Provider and model selection pickers.
-- **fzf-lua**: Provider and model selection pickers.
-- **Worker**: Track a work item and search or Vibe against remaining work.
-- **Lualine**: Display visual edit, codebase search, and Vibe activity through
-  `smith.statusline()`. Without a statusline consumer, `vim.notify` is used.
-
-Example lualine component:
-
-```lua
-{
-  function() return require("agent-smith").statusline() end,
-  cond = function()
-    return require("agent-smith").statusline_active()
-  end,
-}
-```
+> **Pre-1.0, and a rewrite in progress.** The whole implementation was replaced;
+> nothing from the old CLI-wrapper version survives. Linux only for now.
+> See [`spec/`](spec/) for the decisions and their reasoning.
 
 ## Requirements
 
-- Neovim >= 0.10
-- One supported AI CLI available in `$PATH`
-- Ripgrep (`rg`) available in `$PATH` for codebase search
-- Optional on Linux: Bubblewrap (`bwrap`) for read-only original-project mount
-- Optional: `nvim-cmp`, `blink.cmp`, Telescope, or fzf-lua for integrations
+| | |
+|---|---|
+| Neovim | **0.10 or newer** (`vim.json`, `vim.system`) |
+| Platform | **Linux** — see [ADR 0009](spec/decisions/0009-linux-only-v1.md) |
+| `curl` | **Required.** Carries every request. |
+| `git` | Required for vibe; it is what the clone is made from. |
+| `openssl` | Required to read or write a stored credential. |
+| `bwrap` | Optional. Without it the `bash` tool is disabled. |
+| `rg` | Optional. Without it `grep` and `glob` fall back to slower built-ins. |
 
-## Tests
+Check all of that with `:checkhealth agent-smith`.
 
-```sh
-./tests/run.sh
+## Install
+
+Nothing loads on its own — there is no `plugin/` directory — so `setup()` is
+required.
+
+```lua
+{
+  "artumont/agent-smith.nvim",
+  config = function()
+    require("agent-smith").setup({
+      provider = "commandcode",
+      model = "deepseek/deepseek-v4-flash",
+    })
+  end,
+}
 ```
 
-Suite covers public API delegation, Vibe plan/approval/execution, inline visual
-edits, codebase search, tutorial display, sandbox/provider lifecycle, progress
-UI, parsers, filesystem helpers, and provider adapter commands. Real provider
-CLIs and optional picker integrations remain mocked at operation boundaries.
+For working on the plugin itself, point at the checkout instead:
+
+```lua
+{ dir = "~/path/to/agent-smith.nvim", config = function() ... end }
+```
+
+## Setup
+
+`provider` is a preset and `model` is an id the provider actually serves; neither
+is guessed. **Models are fetched from the provider rather than catalogued**
+([ADR 0012](spec/decisions/0012-models-are-fetched-not-catalogued.md)), so an id
+that is wrong for your account fails with the vendor's own message.
+
+```lua
+require("agent-smith").setup({
+  provider = "commandcode",              -- "commandcode" | "zen" | "go"
+  model = "deepseek/deepseek-v4-flash",
+
+  sandbox = {
+    network = false,                     -- no network inside the sandbox
+  },
+
+  progress = {
+    position = "below",                  -- "below" | "above", inline only
+  },
+})
+```
+
+### Credentials
+
+The quickest way is the command. It asks, checks the key against the provider, and
+stores it encrypted:
+
+```vim
+:Smith setup                 " asks which provider, then for the key
+:Smith setup commandcode     " or name the provider up front
+```
+
+The key is typed hidden and never echoed. Nothing is written if the provider
+rejects it, so a typo cannot replace a working credential with a broken one — and
+where a gateway publishes its catalogue publicly there is nothing to check a key
+against until a real request, which the command says rather than claiming it
+verified anything.
+
+Or export the provider's variable, which stores nothing at all:
+
+```sh
+export CMD_API_KEY="..."        # commandcode
+export OPENCODE_API_KEY="..."   # zen and go share one credential
+```
+
+A variable takes precedence over the store, so a stale `export` in a shell profile
+will quietly shadow a credential you stored later. `:Smith setup` warns when it
+notices one.
+
+Or call the store directly:
+
+```lua
+local store = require("agent-smith.auth").new()
+store:set("commandcode", "your-key-here")
+store:get("commandcode")   -- "your-key-here"
+store:list()               -- { "commandcode" }
+store:remove("commandcode")
+```
+
+Stored credentials are **encrypted at rest**, because a plain `auth.json` in a
+config directory is one `git add -A` away from being published
+([ADR 0011](spec/decisions/0011-credentials-encrypted-at-rest.md)). They land in
+two files, deliberately in different trees:
+
+```text
+~/.config/agent-smith/auth.json              encrypted: an accidental commit is not a leak
+~/.local/share/nvim/agent-smith/auth.key     the key; never commit this
+```
+
+The split is the decision. The encrypted file goes in a config tree because that
+is where a credential belongs, but **not** Neovim's own `~/.config/nvim`, which
+is the tree people put under version control. Losing the key means losing the
+credential — there is no recovery and no export, by construction.
+
+### Choosing a model or provider
+
+`setup()` is where a provider and a model are written down, but neither has to be
+typed to be changed:
+
+```vim
+:Smith model        " every model the provider serves, with its route
+:Smith provider     " the presets, and whether each has a credential
+```
+
+The model list is the provider's own catalogue, so anything offered is routable by
+construction, and each line says which API it answers on and how much context it
+has.
+
+Both choices apply to **the current session only** and are written nowhere. Your
+configuration keeps meaning exactly what it says, and restarting Neovim goes back
+to it. `:Smith info` marks a model that came from a picker with `(this session)`,
+and both pickers offer a way back to what `setup()` configured.
+
+Choosing a provider also checks the current model against it and opens the model
+picker when it does not belong there — a model id only means anything against the
+provider that serves it, so one command should not be able to leave you in a state
+that cannot run.
+
+## Use
+
+### Inline — `<leader>as`
+
+1. Select lines in visual mode.
+2. `<leader>as` opens a prompt. Type an instruction, then `:w` to send it, `q` to
+   close without sending.
+3. A spinner appears at the **top of your selection** while it works.
+4. The change lands in the **buffer, not on disk**. Save to accept it, `u` to
+   revert the whole turn.
+
+Writing is bounded to the selected lines. If a correct change needs somewhere
+else, the agent asks rather than refusing or going ahead
+([ADR 0004](spec/decisions/0004-bounded-edit-with-escalation.md)).
+
+### Vibe — `<leader>av`
+
+Four phases, each of them a stopping point
+([ADR 0007](spec/decisions/0007-vibe-workflow.md)):
+
+1. **Plan.** Read-only. The agent investigates and declares the steps and every
+   file it intends to modify.
+2. **Approve.** The plan opens in a window. `a` accepts, `d` denies.
+3. **Execute.** A fresh clone is made from committed state and the work happens
+   there. Writes outside the approved file list are **refused and recorded**.
+4. **Review.** The diff opens, coloured, with any refusals listed above it. `a`
+   applies it to your repository, `d` discards the clone.
+
+`<leader>ax` stops a run in flight.
+
+Because execution happens in a clone, **vibe does not see your uncommitted
+changes** — it works from what is committed
+([open question](spec/open-questions.md)).
+
+### While a run is going
+
+Vibe shows a **floating panel in the corner of the screen**, so it stays visible
+while you scroll or switch files. Inline draws inside the buffer, at the
+selection, because that is where you are already looking. Either way it stays
+under two lines and tells you the latest action and the token usage, including
+the cache hit rate.
+
+### Keys
+
+| Key | Mode | Does |
+|---|---|---|
+| `<leader>as` | visual | Inline edit on the selection |
+| `<leader>av` | normal | Vibe run |
+| `<leader>ax` | normal | Cancel the run in flight |
+| `:Smith info` | | Version, provider, model, sandbox state |
+| `:Smith setup` | | Store a credential, interactively |
+| `:Smith model` | | Pick a model, for this session |
+| `:Smith provider` | | Pick a provider, for this session |
+| `:Smith version` | | Version only |
+| `:checkhealth agent-smith` | | Dependencies and configuration |
+
+Inside the prompt: `:w` sends, `q` or `:q` closes. Inside a decision window: `a`
+accepts, `d` denies, `q` or `<Esc>` denies.
+
+## Options
+
+| Option | Default | |
+|---|---|---|
+| `commands` | `true` | Register `:Smith`. |
+| `default_keymaps` | `true` | Register the three keymaps above. |
+| `provider` | `nil` | Preset name, or a table with a `base_url`. |
+| `model` | `nil` | Required for any run; there is no default on purpose. |
+| `sandbox.root` | `stdpath("cache")/agent-smith/sandbox` | Where clones are made. Must be absolute and outside the project. |
+| `sandbox.network` | `false` | Allow network access inside the sandbox. |
+| `sandbox.blacklist` | `rm`, `mkfs`, `dd`, `shutdown`, … | Lua patterns refused before execution. **A guardrail, not a boundary.** |
+| `progress.position` | `"below"` | Inline status above or below the selection. |
+| `auth.file` | `~/.config/agent-smith/auth.json` | Encrypted credentials. |
+| `auth.key_file` | `~/.local/share/nvim/agent-smith/auth.key` | Decryption key. |
+
+## What is actually enforced
+
+Four independent layers, deliberately redundant
+([ADR 0005](spec/decisions/0005-permission-model.md)):
+
+| Layer | Enforces | Trust level |
+|---|---|---|
+| Scope | Which paths and ranges may be written | Policy, in-process |
+| Blacklist | Obvious accidents in commands | **Guardrail only** — trivially bypassed by a shell |
+| `bwrap` | Filesystem and network reachable by commands | Boundary, kernel-enforced |
+| Isolated clone | What a vibe run can reach at all | Boundary, and disposable |
+
+The honest summary: the sandbox is the boundary, and the permission rules are
+there to catch mistakes and keep you informed. Do not read the blacklist as
+security.
+
+## Providers
+
+All three are **presets** — a base URL, a credential and a routing rule — not
+separate transports ([ADR 0010](spec/decisions/0010-integrated-providers-are-presets.md)).
+Models are fetched, so this table does not go stale:
+
+| Preset | Base URL | Credential | Session header |
+|---|---|---|---|
+| `zen` | `opencode.ai/zen/v1` | `OPENCODE_API_KEY` | `x-opencode-session` |
+| `go` | `opencode.ai/zen/go/v1` | `OPENCODE_API_KEY` | `x-opencode-session` |
+| `commandcode` | `api.commandcode.ai/provider/v1` | `CMD_API_KEY` | none |
+
+Three wire formats are implemented: `/chat/completions`, `/responses` (the
+GPT-family models on Zen and Go), and `/messages` (Claude on Command Code). A
+model is routed by what the provider publishes in its `supported_endpoints`.
+
+**Verification status, stated plainly:**
+
+- **`/chat/completions`** — verified end to end against a live provider.
+- **`/responses`** — implemented and tested against the documented protocol, but
+  never exercised against a live vendor.
+- **`/messages`** — the same, and it cannot currently be verified here: every
+  Claude model returns `MODEL_NOT_IN_PLAN` on the account this was developed
+  with. The routing itself is real — sending a Claude id to `/chat/completions`
+  is refused with `must be called via /provider/v1/messages`.
+
+Details in [`spec/providers.md`](spec/providers.md).
+
+## Development
+
+```sh
+make test     # headless test suite
+make run      # Neovim with your config, plus the plugin
+make run-clean  # the plugin alone, for when your config is the problem
+make help     # list targets
+```
+
+`make run` loads your real configuration first and then the repository, so the
+plugin is exercised against the environment it will actually run in. There is no
+`plugin/` directory, so `setup()` must be called; `dev/init.lua` does it for you.
+
+Tests are headless Lua spec files under `test/spec/`, run with no plugins loaded.
+
+## Documentation
+
+The reasoning lives in [`spec/`](spec/), not here. Start at
+[`spec/README.md`](spec/README.md) for the decision index, or read
+[`spec/architecture.md`](spec/architecture.md) for the module map and data flow.
+
+```vim
+:help agent-smith
+```
+
+## License
+
+GPL-3.0. See [LICENSE](LICENSE).

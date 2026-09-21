@@ -1,337 +1,148 @@
---- agent-smith/providers/init.lua
+--- The provider registry.
 ---
---- BaseProvider: the contract that all AI providers must implement.
----
---- Provider architecture:
---- Agent-Smith supports multiple AI CLI backends through a unified interface.
---- Each provider is a separate module that inherits from BaseProvider and
---- implements the required methods.
----
---- The contract (every provider MUST implement):
---- 1. _build_command(query, context) -> string[]  Build CLI command
---- 2. _get_provider_name() -> string              Human-readable name
---- 3. _get_default_model() -> string              Default model identifier
---- 4. fetch_models(callback)                      Optional model listing
----
---- Request lifecycle:
----   Provider:make_request(query, context, observer)
----     observer.on_start()
----     vim.system(command, callbacks...)
----       stdout -> observer.on_stdout(line)
----       stderr -> observer.on_stderr(line)
----       exit:
----         code != 0 -> observer.on_complete("failed", error)
----         code == 0 -> read tmp_file -> observer.on_complete("success", response)
----     Returns SystemObj (for cancellation via kill)
----
---- Important details:
---- - Temp file pattern: Providers that need to write output to files (opencode,
----   claude) write to the context's tmp_file. BaseProvider reads this file after
----   the process exits successfully. This is safe because vim.system() guarantees
----   the process has exited before calling the exit callback.
---- - Cancellation: The SystemObj returned by make_request() is stored in the
----   Prompt object. On cancel(), SIGTERM is sent to the process. The exit
----   callback checks is_cancelled() and discards the response.
---- - Error handling: Non-zero exit codes are treated as failures. The stderr
----   output is included in the error message. Providers should NOT throw errors -
----   they should return failed status via the observer.
---- - Once helper: The once wrapper ensures on_complete is called exactly once,
----   even if both stdout and stderr callbacks fire after process exit.
+--- Providers are declarations; the behaviour lives in
+--- agent-smith.providers.base. This module lists them and adds a resolving
+--- facade, so a caller can pass a name, a provider, or a plain declaration with
+--- a base_url and get the same behaviour either way.
+
+local Base = require("agent-smith.providers.base")
 
 local M = {}
 
---- Base provider class. All providers inherit from this.
---- Implements the make_request() lifecycle. Providers only need to
---- implement the _build_command, _get_provider_name, and _get_default_model
---- methods. Providers may override fetch_models() for model discovery.
-local BaseProvider = {}
-BaseProvider.__index = BaseProvider
+M.CHAT = Base.CHAT
+M.RESPONSES = Base.RESPONSES
+M.MESSAGES = Base.MESSAGES
 
---- Ensure a function is only called once.
---- Used to prevent double-calling on_complete.
----@param fn function The function to wrap
----@return function Wrapped function that calls fn at most once
-local function once(fn)
-  local called = false
-  return function(...)
-    if called then return end
-    called = true
-    fn(...)
-  end
+M.presets = {
+  zen = require("agent-smith.providers.zen"),
+  go = require("agent-smith.providers.go"),
+  commandcode = require("agent-smith.providers.commandcode"),
+}
+
+--- Sorted preset names.
+function M.names()
+  local names = vim.tbl_keys(M.presets)
+  table.sort(names)
+  return names
 end
 
---- Retrieve the AI's response from the temp file.
+--- A preset by name.
+function M.get(name)
+  return M.presets[name]
+end
+
+--- Resolve a name, a provider, or a plain declaration.
 ---
---- Read a response written to the optional temp file.
----
---- Most supported CLIs print their response to stdout. This fallback exists
---- for providers configured to write a response file instead.
----@param context table The Prompt object (has tmp_file field)
----@return string|nil response File contents, or nil when no file exists
-function BaseProvider:_retrieve_response(context)
-  local ok, result = pcall(vim.fn.readfile, context.tmp_file)
-  if not ok then return nil end
-  return table.concat(result, "\n")
-end
-
---- Report unsupported model discovery unless a provider overrides this method.
----@param cb fun(models: string[]|nil, err: string|nil)
-function BaseProvider:fetch_models(cb)
-  cb(nil, self:_get_provider_name() .. " does not support model listing")
-end
-
---- Build a safe diagnostic message without exposing the user's prompt.
----@param context table Prompt context
----@param command string[] Provider command
----@param reason string Human-readable failure reason
----@param result? table vim.system result
----@param stderr? string Captured stderr
----@return string
-local function failure_diagnostic(context, command, reason, result, stderr)
-  local executable = command[1] or "<missing>"
-  local provider = "<unknown>"
-  local active = context._state and context._state:active_provider() or nil
-  if active and active._get_provider_name then
-    local ok, name = pcall(active._get_provider_name, active)
-    if ok then provider = name end
-  end
-
-  local prompt_present = false
-  for _, argument in ipairs(command) do
-    if argument == context._assembled_query then
-      prompt_present = true
-      break
+---@return table|nil provider
+---@return string|nil error
+function M.resolve(provider)
+  if type(provider) == "string" then
+    local found = M.presets[provider]
+    if not found then
+      return nil, ("unknown provider %q; known: %s"):format(provider, table.concat(M.names(), ", "))
     end
+    return found
   end
 
-  local lines = {
-    "Agent-Smith provider failure",
-    "Cause: " .. reason,
-    "Provider: " .. provider,
-    "Model: " .. tostring(context.model or "<nil>"),
-    string.format(
-      "Executable: %s (%s)",
-      executable,
-      vim.fn.executable(executable) == 1 and "found" or "not found in PATH"
-    ),
-    "Working directory: " .. tostring(context.cwd or vim.fn.getcwd()),
-    "Prompt argument: " .. (prompt_present and "present" or "MISSING"),
-    "Argument count: " .. tostring(#command),
-  }
-
-  if result then
-    table.insert(lines, "Exit code: " .. tostring(result.code))
-    table.insert(lines, "Signal: " .. tostring(result.signal))
+  if type(provider) == "table" then
+    -- Also covers a custom provider: a declaration with a base_url that is not
+    -- one of the presets. Safe on a provider that already exists.
+    local ok, value = pcall(Base.new, provider)
+    if not ok then
+      return nil, tostring(value)
+    end
+    return value
   end
 
-  stderr = vim.trim((stderr or ""):gsub("\27%[[%d;]*m", ""))
-  if stderr ~= "" then
-    table.insert(lines, "stderr:")
-    table.insert(lines, stderr)
-  end
-
-  table.insert(lines, "Prompt text: <redacted>")
-  return table.concat(lines, "\n")
+  return nil, "a provider name or declaration is required"
 end
 
---- Protect the original project from provider-side writes on Linux. Provider
---- still gets a writable disposable copy as cwd. Bubblewrap only overlays the
---- original project read-only; credentials, caches, network, and host binaries
---- remain available to provider CLI.
----@param command string[] Provider command
----@param context table Prompt context
----@return string[] command Wrapped or original command
-local function sandbox_command(command, context)
-  local sandbox = context._sandbox
-  if not sandbox or not sandbox.project_root or vim.fn.executable("bwrap") ~= 1 then
-    return command
-  end
-
-  local wrapped = {
-    "bwrap",
-    "--die-with-parent",
-    "--bind", "/", "/",
-    -- `--bind / /` can leave host device nodes unusable in Bubblewrap's mount
-    -- namespace. Create standard writable devices so Git and provider CLIs can
-    -- use /dev/null for config and command I/O.
-    "--dev", "/dev",
-    "--ro-bind", sandbox.project_root, sandbox.project_root,
-    "--chdir", context.cwd or sandbox.root,
-    "--",
-  }
-  vim.list_extend(wrapped, command)
-  return wrapped
+--- A provider declared inline, for an OpenAI-compatible endpoint that is not a
+--- preset: Ollama, vLLM, llama.cpp, an internal gateway.
+function M.custom(fields)
+  return Base.new(fields)
 end
 
---- Put delimited-response providers in their own Unix process group. Some
---- agent CLIs print their final response but keep helper processes or pipes
---- alive; killing the group closes those handles without leaking children.
-local function process_group_command(command, context)
-  if (not context.response_terminator and not context.response_idle_timeout_ms)
-    or vim.fn.has("win32") == 1 or vim.fn.executable("setsid") ~= 1 then
-    return command
+-- Facade. Each of these resolves its first argument, then delegates to the
+-- provider, so a name works anywhere a provider does.
+
+---@return table|nil result
+---@return string|nil error
+function M.fetch(provider, fields)
+  local resolved, err = M.resolve(provider)
+  if not resolved then
+    return nil, err
   end
-  context._provider_process_group = true
-  local wrapped = { "setsid", "--wait" }
-  vim.list_extend(wrapped, command)
-  return wrapped
+  return resolved:fetch(fields)
 end
 
-local function terminate_process(context, process)
-  if not process then return end
-  if context._provider_process_group and process.pid then
-    local ok, result = pcall(vim.uv.kill, -process.pid, vim.uv.constants.SIGTERM)
-    if ok and result == 0 then return end
+function M.catalogue(provider, fields)
+  local resolved, err = M.resolve(provider)
+  if not resolved then
+    return nil, err
   end
-  pcall(process.kill, process, vim.uv.constants.SIGTERM)
+  return resolved:catalogue(fields)
 end
 
---- Execute the provider CLI and handle the async response.
----
---- This is the main method that providers inherit. It:
---- 1. Calls observer.on_start()
---- 2. Spawns the provider process via vim.system()
---- 3. Routes stdout/stderr to observer callbacks
---- 4. On exit: reads temp file and calls on_complete
----
----@param query string The assembled prompt text
----@param context table The Prompt object
----@param observer table { on_start, on_stdout, on_stderr, on_complete }
----@return table SystemObj The running process (for cancellation)
-function BaseProvider:make_request(query, context, observer)
-  observer.on_start()
-
-  local finished = false
-  local once_complete = once(function(status, text)
-    finished = true
-    observer.on_complete(status, text)
-  end)
-
-  -- Stored only for identity checks in diagnostics; diagnostic output always
-  -- redacts prompt contents.
-  context._assembled_query = query
-  local command = self:_build_command(query, context)
-  local extra_args = context._state and context._state.provider_extra_args or {}
-  if #extra_args > 0 then
-    vim.list_extend(command, extra_args)
+function M.read_cache(provider, fields)
+  local resolved, err = M.resolve(provider)
+  if not resolved then
+    return nil, err
   end
-  command = sandbox_command(command, context)
-  command = process_group_command(command, context)
-
-  -- CLI providers normally print the final answer to stdout. Keep every
-  -- chunk because vim.system() may stream one response across callbacks.
-  local stdout = {}
-  local stderr = {}
-  local early_response
-  local process
-  local activity_generation = 0
-
-  local function schedule_idle_completion()
-    local timeout = context.response_idle_timeout_ms
-    if not timeout then return end
-    activity_generation = activity_generation + 1
-    local generation = activity_generation
-    vim.defer_fn(function()
-      if finished or early_response or context:is_cancelled()
-        or generation ~= activity_generation then return end
-      local response = table.concat(stdout, "")
-      if vim.trim(response) == "" then return end
-      early_response = response
-      terminate_process(context, process)
-    end, timeout)
-  end
-
-  local ok, proc = pcall(
-    vim.system,
-    command,
-    {
-      text = true,
-      cwd = context.cwd,
-      stdout = vim.schedule_wrap(function(err, data)
-        -- Cancellation completes only from exit callback so sandbox and
-        -- tracking remain alive until provider process has actually stopped.
-        if context:is_cancelled() then return end
-        if err and err ~= "" then table.insert(stderr, "stdout read error: " .. err) end
-        if data then
-          table.insert(stdout, data)
-          observer.on_stdout(data)
-          if context.response_terminator and not early_response then
-            local response = table.concat(stdout, "")
-            if response:find(context.response_terminator, 1, true) then
-              early_response = response
-              terminate_process(context, process)
-            end
-          end
-          schedule_idle_completion()
-        end
-      end),
-      stderr = vim.schedule_wrap(function(err, data)
-        if context:is_cancelled() then return end
-        if err and err ~= "" then table.insert(stderr, "stderr read error: " .. err) end
-        if data then
-          table.insert(stderr, data)
-          observer.on_stderr(data)
-          schedule_idle_completion()
-        end
-      end),
-    },
-    vim.schedule_wrap(function(obj)
-      if context:is_cancelled() then
-        once_complete("cancelled", "")
-        return
-      end
-
-      if early_response then
-        once_complete("success", early_response)
-        return
-      end
-
-      if obj.code ~= 0 then
-        once_complete("failed", failure_diagnostic(
-          context,
-          command,
-          "provider process exited unsuccessfully",
-          obj,
-          table.concat(stderr, "")
-        ))
-        return
-      end
-
-      local response = table.concat(stdout, "")
-      if vim.trim(response) == "" then
-        response = self:_retrieve_response(context) or ""
-      end
-      if vim.trim(response) == "" then
-        once_complete("failed", failure_diagnostic(
-          context,
-          command,
-          "provider exited successfully but returned an empty response",
-          obj,
-          table.concat(stderr, "")
-        ))
-        return
-      end
-      once_complete("success", response)
-    end)
-  )
-
-  if not ok then
-    once_complete("failed", failure_diagnostic(
-      context,
-      command,
-      "failed to start provider process",
-      nil,
-      tostring(proc)
-    ))
-    return nil
-  end
-
-  process = proc
-  if early_response then terminate_process(context, process) end
-  context:_set_process(proc)
-  return proc
+  return resolved:read_cache(fields)
 end
 
-M.BaseProvider = BaseProvider
+function M.format_for(provider, model, override, fields)
+  local resolved, err = M.resolve(provider)
+  if not resolved then
+    return nil, err
+  end
+  return resolved:format_for(model, override, fields)
+end
+
+function M.credential(provider, fields)
+  local resolved, err = M.resolve(provider)
+  if not resolved then
+    return nil, err
+  end
+  return resolved:credential(fields)
+end
+
+function M.available(provider, fields)
+  local resolved, err = M.resolve(provider)
+  if not resolved then
+    return nil, err
+  end
+  return resolved:available(fields)
+end
+
+function M.wire_model(provider, model)
+  local resolved, err = M.resolve(provider)
+  if not resolved then
+    return nil, err
+  end
+  return resolved:wire_model(model)
+end
+
+--- Build a transport. Takes the fields the provider method takes, plus
+--- `provider`, which may be a name or a declaration.
+function M.transport_for(fields)
+  assert(type(fields) == "table", "transport_for needs a fields table")
+
+  local resolved, err = M.resolve(fields.provider or "zen")
+  if not resolved then
+    return nil, err, nil
+  end
+  return resolved:transport_for(fields)
+end
+
+--- Parse a `GET /models` body with the default endpoint mapping.
+function M.parse(body)
+  return Base.parse(body)
+end
+
+M.choose_format = Base.choose_format
+M.default_cache_directory = Base.default_cache_directory
+M.forget = Base.forget
 
 return M

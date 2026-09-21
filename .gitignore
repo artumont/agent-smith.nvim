@@ -48,3 +48,8 @@ Thumbs.db
 .vscode/
 .idea/
 
+
+# Local secrets
+.env
+.env.*
+!.env.example

@@ -1,340 +1,298 @@
---- agent-smith/init.lua
+--- agent-smith.nvim — public API.
 ---
---- Mr. Anderson, I’ve been expecting you…
----
---- This is the public API for Agent-Smith, a Neovim plugin for AI-assisted code editing.
----
---- Agent-Smith works by:
---- 1. Capturing a visual selection (or operating on search/vibe)
---- 2. Building a context window with: system prompts, AGENTS.md files, #rules, @files
---- 3. Shelling out to an AI CLI provider (opencode, claude, pi, etc.)
---- 4. Parsing the response and applying it (visual replace, quickfix, multi-file approval)
----
---- Key design decisions:
---- - Bounded editing: Visual edits only modify the selected region unless
----   explicitly using multi_file() which requires per-file approval.
---- - Provider agnostic: All AI CLIs implement the same BaseProvider interface.
----   Adding a new provider = one new file implementing 4 methods.
---- - Async non-blocking: All AI requests use vim.system() with callbacks.
----   The UI thread is never blocked.
----
---- Potential pitfalls:
---- - setup() must be called before any other function. The assertion in
----   configured() will fail with a clear message if you forget.
---- - Visual selection marks ('< and '>) are only valid right after leaving
----   visual mode. The plugin captures them immediately in Range.from_visual_selection().
---- - Provider processes can outlive the plugin if Neovim crashes. On normal exit,
----   VimLeavePre autocmd kills all in-flight requests.
---- - The state variable is module-local. Only one plugin instance can exist
----   per Neovim session (this is intentional - it's a singleton pattern).
+--- Two modes, no chat. See spec/decisions/0003-two-modes-no-chat.md.
+--- The plugin owns the agent loop and the tools rather than wrapping a CLI and
+--- parsing its output. See spec/decisions/0001-own-the-agent-loop.md.
 
-local State = require("agent-smith.state")
-local Logger = require("agent-smith.logger")
-local Ops = require("agent-smith.ops")
-local Select = require("agent-smith.window.select-window")
-local Window = require("agent-smith.window")
-local Statusline = require("agent-smith.statusline")
-local UI = require("agent-smith.ui")
+local Config = require("agent-smith.config")
 
 local M = {}
-local state = nil -- Module-local singleton. One instance per Neovim session.
 
---- Available AI provider backends.
---- Each implements the BaseProvider interface from providers/init.lua.
----
---- Usage:
----   local smith = require("agent-smith")
----   smith.setup({ provider = smith.Providers.PiProvider })
-M.Providers = {
-	OpenCodeProvider = require("agent-smith.providers.opencode"),
-	ClaudeCodeProvider = require("agent-smith.providers.claude"),
-	CursorAgentProvider = require("agent-smith.providers.cursor"),
-	GeminiCLIProvider = require("agent-smith.providers.gemini"),
-	KiroProvider = require("agent-smith.providers.kiro"),
-	PiProvider = require("agent-smith.providers.pi"),
-}
+M.version = "0.2.0"
 
---- Extension modules that can be accessed directly.
---- Worker provides work-item tracking for iterative development.
-M.Extensions = { Worker = require("agent-smith.extensions.worker") }
+--- Resolved configuration. Nil until setup() is called.
+M.config = nil
 
---- Guard function: returns current state or errors if setup() not called.
---- All public functions that need state call this first.
-local function configured()
-	assert(state, "Call require('agent-smith').setup() first")
-	return state
+local SUBCOMMANDS = { "info", "model", "provider", "setup", "version" }
+
+local function notify(message, level)
+  vim.notify("agent-smith: " .. message, level or vim.log.levels.INFO)
 end
 
---- Initialize Agent-Smith plugin.
+--- The in-flight request, so it can be cancelled.
+local active = nil
+
+--- Start an inline edit on the current selection.
 ---
---- Must be called once before using any other function. Sets up:
---- - State singleton with provider, model, rules, tracking
---- - Extensions (completions, file references)
---- - Default keymaps (unless default_keymaps = false)
---- - VimLeavePre autocmd to kill in-flight requests on exit
----
----@param opts? table Configuration options:
----   - provider: BaseProvider (default: OpenCodeProvider)
----   - model: string (default: provider's default model)
----   - logger: { level: string, path?: string }
----   - completion: { source: "native"|"cmp"|"blink", custom_rules: string[] }
----   - md_files: string[] (context files to discover, default: {"AGENTS.md"})
----   - tmp_dir: string (disposable provider workspace root outside project)
----   - default_keymaps: boolean (set false to disable default keymaps)
----@return table M The module table for chaining
-function M.setup(opts)
-	opts = opts or {}
-	opts.provider = opts.provider or M.Providers.OpenCodeProvider
+--- Reads the visual marks immediately, because they are only reliable right
+--- after leaving visual mode. Returns the loop handle, or nil and a reason.
+---@param options table|nil Passed through to agent-smith.modes.inline.
+---@return table|nil handle
+function M.inline(options)
+  local Inline = require("agent-smith.modes.inline")
 
-	state = State.new(opts)
-	state.model = opts.model or opts.provider:_get_default_model()
-	Logger:configure(opts.logger)
-	UI.set_accent(state.matrix_mode)
+  local fields = {}
+  for key, value in pairs(options or {}) do
+    fields[key] = value
+  end
+  fields.config = M.config
 
-	require("agent-smith.extensions").init(state)
+  local handle, err = Inline.run(fields)
+  if not handle then
+    -- Cancelling the prompt is a normal outcome, not something to warn about.
+    if err ~= "cancelled" then
+      notify(tostring(err), vim.log.levels.WARN)
+    end
+    return nil
+  end
 
-	-- Default keymaps: visual edit, multi-file, search, vibe, cancel
-	if opts.default_keymaps ~= false then
-		vim.keymap.set("v", "<leader>as", function()
-			M.visual()
-		end, { desc = "Agent-Smith visual edit" })
-		vim.keymap.set("v", "<leader>aS", function()
-			M.multi_file()
-		end, { desc = "Agent-Smith multi-file edit" })
-		vim.keymap.set("n", "<leader>af", function()
-			M.search()
-		end, { desc = "Agent-Smith search" })
-		vim.keymap.set("n", "<leader>av", function()
-			M.vibe()
-		end, { desc = "Agent-Smith vibe" })
-		vim.keymap.set("n", "<leader>ax", function()
-			M.stop_all_requests()
-		end, { desc = "Agent-Smith cancel" })
-		vim.keymap.set("n", "<leader>ar", function()
-			M.progress()
-		end, { desc = "Agent-Smith request progress" })
-	end
-
-	-- Safety: kill all provider processes when Neovim exits
-	vim.api.nvim_create_autocmd("VimLeavePre", {
-		callback = function()
-			M.stop_all_requests()
-		end,
-	})
-
-	-- Show one self-contained floating choice after setup has finished.
-	if not State.read_choice() and #vim.api.nvim_list_uis() > 0 then
-		vim.schedule(function()
-			require("agent-smith.window.first-run-window").open(function(choice)
-				State.write_choice(choice)
-				state.matrix_mode = choice == "red"
-				UI.set_accent(state.matrix_mode)
-			end)
-		end)
-	end
-
-	return M
+  active = handle
+  return handle
 end
 
---- Start a visual selection edit.
+--- Start a vibe run: plan, approve, execute, review.
 ---
---- Captures the current visual selection, prompts for instructions, and asks
---- the AI to replace only that selection. Imports detected in the response
---- are routed to the file's import section automatically.
----
---- Flow:
---- 1. Capture visual selection -> Range object
---- 2. Open floating prompt window
---- 3. User types instructions, presses :w to submit
---- 4. Build context (AGENTS.md, #rules, @files, system prompt)
---- 5. Shell out to provider asynchronously
---- 6. On response: extract imports -> place at file top -> replace selection body
----
----@param opts? table Optional overrides:
----   - multi_file: boolean (use multi-file protocol instead)
----@return nil
-function M.visual(opts)
-	return Ops.visual.run(configured(), opts)
+--- Returns the session handle, or nil and a reason. See
+--- spec/decisions/0007-vibe-workflow.md and agent-smith.modes.vibe.
+---@param options table|nil Passed through to agent-smith.modes.vibe.
+---@return table|nil handle
+function M.vibe(options)
+  local Vibe = require("agent-smith.modes.vibe")
+
+  local fields = {}
+  for key, value in pairs(options or {}) do
+    fields[key] = value
+  end
+  fields.config = M.config
+
+  local handle, err = Vibe.run(fields)
+  if not handle then
+    if err ~= "cancelled" then
+      notify(tostring(err), vim.log.levels.WARN)
+    end
+    return nil
+  end
+
+  active = handle
+  return handle
 end
 
---- Start a multi-file edit with per-file approval.
+--- Configure a credential, interactively.
 ---
---- Like visual() but uses the multi-file protocol where the AI outputs
---- structured <FILE_CHANGE>/<CONTENT> blocks for each file. Each block
---- is presented to the user for approval before application.
+--- The first thing a new user has to do, and the one thing `setup()` cannot take,
+--- so it gets a command rather than a paragraph in the README. Omit the provider to
+--- be asked which one.
 ---
---- IMPORTANT: This function requires the AI to understand the multi-file
---- output format. The system prompt includes instructions for this, but
---- not all models handle it equally well.
----
----@param opts? table Optional overrides
----@return nil
-function M.multi_file(opts)
-	opts = opts or {}
-	opts.multi_file = true
-	return M.visual(opts)
+--- Reports through notifications rather than returning, because the flow is
+--- asynchronous: `vim.ui.select` may be a floating picker, so the answer arrives
+--- through a callback. See agent-smith.onboard.
+---@param provider string|nil Skip the provider picker.
+function M.onboard(provider)
+  require("agent-smith.onboard").run({ provider = provider })
 end
 
---- Run AI-planned ripgrep search across project.
+--- The provider and model chosen with a picker, for this session only.
 ---
---- Provider returns only PCRE2 patterns; local `rg --vimgrep` reads project
---- files and populates quickfix plus optional fuzzy picker.
+--- Deliberately not written anywhere. `setup()` is where a choice is written down;
+--- a picker that outlived the session would mean editing your configuration,
+--- restarting, and watching nothing change — the exact confusion a pick is meant to
+--- spare you. A pick is a detour for one session, not a second source of truth.
+M.session = nil
+
+--- A resolved configuration with this session's choice applied.
 ---
----@param opts? table Optional:
----   - additional_prompt: string (skip prompt window, use this directly)
----@return nil
-function M.search(opts)
-	return Ops.search.run(configured(), opts)
+--- `M.resolved` is left untouched, so dropping the session choice restores exactly
+--- what `setup()` said without resolving anything again.
+---@param resolved table
+---@return table config
+local function with_session(resolved)
+  if not M.session then
+    return resolved
+  end
+
+  local applied = {}
+  for key, value in pairs(resolved) do
+    applied[key] = value
+  end
+  if M.session.provider then
+    applied.provider = M.session.provider
+  end
+  if M.session.model then
+    applied.model = M.session.model
+  end
+  applied.session = M.session
+
+  return applied
 end
 
---- Run vibe mode: open-ended AI analysis.
+--- Adopt what a picker reported, for the rest of the session.
 ---
---- Similar to search() but for broader codebase operations. The AI performs
---- whatever action was requested and reports what it did via quickfix entries.
+--- `info.cleared` means the user asked to go back, so the session choice is dropped
+--- and `setup()` applies again. Anything else updates the half that changed, which
+--- keeps a provider pick from discarding a model already chosen in this session.
+local function adopt(info)
+  if not M.resolved or type(info) ~= "table" then
+    return
+  end
+
+  if info.cleared then
+    M.session = nil
+  elseif info.provider or info.model then
+    M.session = {
+      provider = info.provider or (M.session and M.session.provider),
+      model = info.model or (M.session and M.session.model),
+    }
+  else
+    return
+  end
+
+  M.config = with_session(M.resolved)
+end
+
+--- Choose a model from the provider's catalogue, interactively.
 ---
----@param opts? table Optional:
----   - additional_prompt: string (skip prompt window, use this directly)
----@return nil
-function M.vibe(opts)
-	return Ops.vibe.run(configured(), opts)
+--- The choice applies to this session and is not remembered: `setup()` stays the
+--- only place a model is written down.
+---@param provider string|nil Defaults to the configured provider.
+function M.choose_model(provider)
+  require("agent-smith.onboard").choose_model({
+    provider = provider or (M.config and M.config.provider),
+    config = M.config or {},
+    session = M.session,
+    on_done = function(ok, _, info)
+      if ok then
+        adopt(info)
+      end
+    end,
+  })
 end
 
---- Start a tutorial generation request.
+--- Choose which provider to use, interactively.
 ---
---- The AI creates a tutorial based on the prompt, which is displayed in
---- a split window. Tutorial output must be valid Markdown with a title
---- on the first line.
----
----@param opts? table Optional overrides
----@return nil
-function M.tutorial(opts)
-	return Ops.tutorial.run(configured(), opts)
+--- Remembers the choice for this session the same way `choose_model` does, and
+--- opens the model picker when the current model does not belong to the provider
+--- chosen.
+function M.choose_provider()
+  require("agent-smith.onboard").choose_provider({
+    config = M.config or {},
+    session = M.session,
+    on_done = function(ok, _, info)
+      if ok then
+        adopt(info)
+      end
+    end,
+  })
 end
 
---- Cancel all in-flight requests.
----
---- Sends SIGTERM to all running provider processes. Responses in progress
---- are discarded. This is safe to call multiple times.
----
----@return nil
-function M.stop_all_requests()
-	if state then
-		state.tracking:stop_all_requests()
-		vim.notify("Agent-Smith requests cancelled")
-	end
+--- Stop the in-flight request, if there is one.
+---@return boolean cancelled
+function M.cancel()
+  if active and type(active.cancel) == "function" then
+    active.cancel(active)
+    active = nil
+    return true
+  end
+  return false
 end
 
---- Clear request history.
----
----@return nil
-function M.clear_previous_requests()
-	configured().tracking:clear_history()
-end
-
---- Set the active model for subsequent requests.
----
----@param model string Model identifier (provider-specific)
----@return table M For chaining: smith.set_model("x").set_provider(y)
-function M.set_model(model)
-	configured().model = model
-	return M
-end
-
---- Get the current model identifier.
----@return string
-function M.get_model()
-	return configured().model
-end
-
---- Set the active provider (also resets model to provider default).
----
----@param provider table A provider from M.Providers
----@return table M For chaining
-function M.set_provider(provider)
-	assert(provider, "Unknown provider")
-	configured().provider_override = provider
-	configured().model = provider:_get_default_model()
-	return M
-end
-
---- Get the currently active provider (override or default).
----@return table
-function M.get_provider()
-	return configured():active_provider()
-end
-
---- Get the name of the current provider.
----@return string
-function M.get_provider_name()
-	return M.get_provider():_get_provider_name()
-end
-
---- View past request history in a selectable list.
----
---- Opens a floating window showing all completed requests. Select one
---- to view its full logs. Useful for debugging failed requests.
----
----@return nil
-function M.view_logs()
-	local items = configured().tracking.history
-	Select.select(
-		"Request History",
-		vim.tbl_map(function(p)
-			return p.operation .. ": " .. p:summary()
-		end, items),
-		function(index)
-			local p = index and items[index]
-			if p then
-				Window.display_full_screen_message(Logger:logs_by_id(p.xid) or { "No logs for request" })
-			end
-		end
-	)
-end
-
---- Open floating live view for queued and active requests.
----@return number|nil win
-function M.progress()
-	return require("agent-smith.window.progress-window").open(configured())
-end
-
---- Show current plugin status.
----
----@return nil
---- Return animated request text for lualine or another statusline plugin.
---- Add `function() return require("agent-smith").statusline() end` as a
---- lualine component. Returns an empty string while no tracked status runs.
----@return string
-function M.statusline()
-	return Statusline.component()
-end
-
---- Return optional active-status accent color for lualine.
----@return table|nil color
-function M.statusline_color()
-	return Statusline.color()
-end
-
---- Return whether an Agent-Smith statusline indicator is active.
----@return boolean
-function M.statusline_active()
-	return Statusline.is_active()
-end
-
+--- Report the version and the resolved configuration.
 function M.info()
-	vim.notify(
-		string.format(
-			"Agent-Smith: %s (%s), %d requests",
-			M.get_provider_name(),
-			M.get_model(),
-			configured().tracking:completed()
-		)
-	)
+  if not M.config then
+    notify("not configured; call require('agent-smith').setup() first")
+    return
+  end
+
+  -- Says where the model came from, because a remembered pick overrides setup()
+  -- and an override nobody can see is indistinguishable from configuration being
+  -- ignored.
+  local model = M.config.model or "no model"
+  if M.config.session then
+    model = model .. " (this session)"
+  end
+
+  notify(
+    ("%s — %s %s — sandbox %s — network %s"):format(
+      M.version,
+      M.config.provider or "no provider",
+      model,
+      M.config.sandbox.root,
+      M.config.sandbox.network and "on" or "off"
+    )
+  )
 end
 
---- Internal: get state singleton (for testing/extensions).
----@return table
-function M.__get_state()
-	return state
+local function handle_command(args)
+  local subcommand = args.fargs[1]
+  if subcommand == nil or subcommand == "info" then
+    M.info()
+  elseif subcommand == "model" then
+    M.choose_model(args.fargs[2])
+  elseif subcommand == "provider" then
+    M.choose_provider()
+  elseif subcommand == "setup" then
+    M.onboard(args.fargs[2])
+  elseif subcommand == "version" then
+    notify(M.version)
+  else
+    notify(
+      ("unknown subcommand %q; expected one of: %s"):format(
+        subcommand,
+        table.concat(SUBCOMMANDS, ", ")
+      ),
+      vim.log.levels.ERROR
+    )
+  end
+end
+
+local function register_commands()
+  vim.api.nvim_create_user_command("Smith", handle_command, {
+    nargs = "*",
+    desc = "agent-smith",
+    complete = function(arg_lead)
+      local matches = {}
+      for _, name in ipairs(SUBCOMMANDS) do
+        if name:sub(1, #arg_lead) == arg_lead then
+          matches[#matches + 1] = name
+        end
+      end
+      return matches
+    end,
+    force = true,
+  })
+end
+
+local function register_keymaps()
+  local maps = {
+    { mode = "v", lhs = "<leader>as", rhs = M.inline, desc = "agent-smith inline edit" },
+    { mode = "n", lhs = "<leader>av", rhs = M.vibe, desc = "agent-smith vibe" },
+    { mode = "n", lhs = "<leader>ax", rhs = M.cancel, desc = "agent-smith cancel" },
+  }
+  for _, map in ipairs(maps) do
+    vim.keymap.set(map.mode, map.lhs, map.rhs, { desc = map.desc })
+  end
+end
+
+--- Initialize the plugin.
+---
+---@param opts table|nil Configuration overrides; see agent-smith.config.
+---@return table M The module table, for chaining.
+function M.setup(opts)
+  -- Kept, so a pick made during the session can be re-applied without re-reading
+  -- any configuration.
+  M.resolved = Config.resolve(opts)
+
+  -- A fresh setup() is a fresh start: any pick from earlier in the session is
+  -- dropped, so reloading a configuration is not answered with a stale override.
+  M.session = nil
+  M.config = with_session(M.resolved)
+
+  if M.config.commands then
+    register_commands()
+  end
+  if M.config.default_keymaps then
+    register_keymaps()
+  end
+  return M
 end
 
 return M
