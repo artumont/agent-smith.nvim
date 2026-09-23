@@ -13,6 +13,7 @@ agent-smith-inline	agent-smith.txt	/*agent-smith-inline*
 agent-smith-keys	agent-smith.txt	/*agent-smith-keys*
 agent-smith-license	agent-smith.txt	/*agent-smith-license*
 agent-smith-linux	agent-smith.txt	/*agent-smith-linux*
+agent-smith-monitor	agent-smith.txt	/*agent-smith-monitor*
 agent-smith-neovim	agent-smith.txt	/*agent-smith-neovim*
 agent-smith-options	agent-smith.txt	/*agent-smith-options*
 agent-smith-picking	agent-smith.txt	/*agent-smith-picking*

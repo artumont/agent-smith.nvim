@@ -191,6 +191,18 @@ selection, because that is where you are already looking. Either way it stays
 under two lines and tells you the latest action and the token usage, including
 the cache hit rate.
 
+That is the wrong surface for a run that has stopped moving: one line looks the
+same whether the agent is thinking hard or hung. `<leader>am` (or `:Smith
+monitor`) opens the **event stream** in a split — every event, timestamped, with
+how long each tool call took — and it is recorded whether or not you were
+watching, so it can be read after the fact. Inside it: `q` closes, `X` cancels
+the run, `<C-c>` clears the log.
+
+A run that produces no event for two minutes is aborted by the loop rather than
+waiting forever, reporting what it was waiting on
+([ADR 0014](spec/decisions/0014-stalled-runs-are-aborted.md)). Set
+`stall_timeout_ms` to `0` to turn that off.
+
 ### Keys
 
 | Key | Mode | Does |
@@ -198,10 +210,12 @@ the cache hit rate.
 | `<leader>as` | visual | Inline edit on the selection |
 | `<leader>av` | normal | Vibe run |
 | `<leader>ax` | normal | Cancel the run in flight |
+| `<leader>am` | normal | Open or close the event stream monitor |
 | `:Smith info` | | Version, provider, model, sandbox state |
 | `:Smith setup` | | Store a credential, interactively |
 | `:Smith model` | | Pick a model, for this session |
 | `:Smith provider` | | Pick a provider, for this session |
+| `:Smith monitor` | | Open or close the event stream monitor |
 | `:Smith version` | | Version only |
 | `:checkhealth agent-smith` | | Dependencies and configuration |
 
@@ -213,7 +227,8 @@ accepts, `d` denies, `q` or `<Esc>` denies.
 | Option | Default | |
 |---|---|---|
 | `commands` | `true` | Register `:Smith`. |
-| `default_keymaps` | `true` | Register the three keymaps above. |
+| `default_keymaps` | `true` | Register the keymaps above. |
+| `stall_timeout_ms` | `120000` | Abort a run that produces no event for this long. Inactivity, not duration; `0` disables. |
 | `provider` | `nil` | Preset name, or a table with a `base_url`. |
 | `model` | `nil` | Required for any run; there is no default on purpose. |
 | `sandbox.root` | `stdpath("cache")/agent-smith/sandbox` | Where clones are made. Must be absolute and outside the project. |

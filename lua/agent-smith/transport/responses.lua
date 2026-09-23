@@ -143,19 +143,23 @@ end
 local function usage_fields(usage)
   local fields = {}
 
-  if type(usage.input_tokens) == "number" then
-    fields.input_tokens = usage.input_tokens
-  end
-  if type(usage.output_tokens) == "number" then
-    fields.output_tokens = usage.output_tokens
-  end
-
   local cached = usage.cached_tokens
   if type(cached) ~= "number" and type(usage.input_tokens_details) == "table" then
     cached = usage.input_tokens_details.cached_tokens
   end
   if type(cached) == "number" then
     fields.cache_read_tokens = cached
+  end
+
+  -- `input_tokens` here, like `prompt_tokens` on chat completions, is the total
+  -- and *includes* the cached ones, while the schema's `input_tokens` is the
+  -- uncached part. Subtracting here is what keeps Usage.hit_rate from being
+  -- capped at 50%. See transport/openai_compat.lua.
+  if type(usage.input_tokens) == "number" then
+    fields.input_tokens = math.max(usage.input_tokens - (cached or 0), 0)
+  end
+  if type(usage.output_tokens) == "number" then
+    fields.output_tokens = usage.output_tokens
   end
 
   local reasoning = usage.reasoning_tokens

@@ -23,6 +23,16 @@
 --- `on_permission`, and on approval grants the target once in the scope and
 --- re-dispatches the same call. With no `on_permission` the request is refused:
 --- silence is not consent.
+---
+--- Stalls
+---
+--- A request with no event for `stall_timeout_ms` is aborted, so a command that
+--- never comes back cannot hang the run forever. The budget is *inactivity*, not
+--- total duration: a stream that keeps dribbling tokens is working, however slow
+--- it is, and streaming a long answer is not a stall. Waiting on the user — a
+--- permission question — is not a stall either, so the timer is disarmed while
+--- `on_permission` is pending.
+--- See spec/decisions/0014-stalled-runs-are-aborted.md.
 
 local Events = require("agent-smith.agent.events")
 local Usage = require("agent-smith.usage")
@@ -30,6 +40,29 @@ local Usage = require("agent-smith.usage")
 local M = {}
 
 M.DEFAULT_MAX_TURNS = 10
+
+--- How long the loop tolerates no activity at all before giving up.
+---
+--- Two minutes is chosen against the stall it is meant to catch: a sandboxed
+--- command whose process died without its callback ever firing, which leaves a
+--- tool call that will never produce a result. Every legitimate wait is either
+--- shorter (the bash tool's own default timeout is one minute) or keeps
+--- producing events. Set `stall_timeout_ms` to 0 to disable the watchdog.
+M.DEFAULT_STALL_TIMEOUT_MS = 120000
+
+--- A budget as whole seconds, with a decimal only when it is not whole.
+---
+--- `120 s` reads better than `120.0 s`, and a sub-second budget — which only a
+--- test or a deliberately impatient caller configures — would otherwise be
+--- reported as `0 s`, saying nothing about how long it actually waited.
+---@param ms number
+---@return string
+function M.format_seconds(ms)
+  if ms % 1000 == 0 then
+    return ("%d s"):format(ms / 1000)
+  end
+  return ("%.1f s"):format(ms / 1000)
+end
 
 local function to_tool_result(id, outcome)
   if outcome.needs_permission then
@@ -56,6 +89,7 @@ end
 ---   - on_permission: fun(permission, decide)  decide(approved: boolean)
 ---   - on_done: fun(result)    result = { ok, error?, reason?, turns, usage, cancelled }
 ---   - max_turns: number|nil   Model round trips. Default 10.
+---   - stall_timeout_ms: number|nil  Inactivity budget. Default 120000, 0 disables.
 ---@return table handle { cancel = fun() }
 function M.run(options)
   assert(type(options) == "table", "loop.run needs an options table")
@@ -70,13 +104,18 @@ function M.run(options)
   local on_done = options.on_done or function(_) end
   local on_permission = options.on_permission
   local max_turns = options.max_turns or M.DEFAULT_MAX_TURNS
+  local stall_timeout_ms = options.stall_timeout_ms
+  if stall_timeout_ms == nil then
+    stall_timeout_ms = M.DEFAULT_STALL_TIMEOUT_MS
+  end
 
-  local state = { finished = false, cancelled = false, usage = {} }
+  local state = { finished = false, cancelled = false, usage = {}, activity = "running" }
   local handle = {}
   local turn = 0
   local transport_handle = nil
   local in_run = false
   local deferred = false
+  local stall_timer = nil
 
   ---@class SmithTurn
   ---@field text string
@@ -91,11 +130,17 @@ function M.run(options)
   ---@type SmithTurn
   local turn_state = { text = "", thinking = "", tool_uses = {}, ended = true }
 
+  -- Declared before `finish`, which disarms the watchdog: a `local function`
+  -- written after it would be a different (later, global-shadowing) binding and
+  -- `finish` would call a global that is always nil.
+  local disarm_stall
+
   local function finish(result)
     if state.finished then
       return
     end
     state.finished = true
+    disarm_stall()
     result.usage = state.usage
     result.cancelled = state.cancelled
     result.turns = turn
@@ -107,6 +152,60 @@ function M.run(options)
 
   local next_turn
   local dispatch_tools
+
+  --- Stop the watchdog, if one is armed.
+  disarm_stall = function()
+    if stall_timer then
+      stall_timer:stop()
+      if not stall_timer:is_closing() then
+        stall_timer:close()
+      end
+      stall_timer = nil
+    end
+  end
+
+  --- The watchdog fired: nothing has moved for the whole budget.
+  ---
+  --- The in-flight transport is stopped rather than left to deliver into a
+  --- finished run. `cancelled` is deliberately left alone, because this is not
+  --- the user cancelling — the caller needs to be able to tell the two apart.
+  local function on_stall()
+    if state.finished then
+      return
+    end
+
+    if transport_handle and type(transport_handle.cancel) == "function" then
+      pcall(transport_handle.cancel, transport_handle)
+    end
+
+    finish({
+      ok = false,
+      reason = "stalled",
+      error = ("no activity for %s while %s"):format(
+        M.format_seconds(stall_timeout_ms),
+        state.activity
+      ),
+    })
+  end
+
+  --- Arm, or re-arm, the inactivity budget.
+  ---
+  --- Called for every event as well as before every request, because what is
+  --- being watched is silence, and any event is proof of progress. A budget of
+  --- zero or less disables the watchdog entirely.
+  local function arm_stall(activity)
+    state.activity = activity or state.activity
+
+    if not stall_timeout_ms or stall_timeout_ms <= 0 then
+      return
+    end
+    if stall_timer then
+      stall_timer:stop()
+    else
+      stall_timer = vim.uv.new_timer()
+    end
+    stall_timer:start(stall_timeout_ms, 0, vim.schedule_wrap(on_stall))
+  end
 
   --- Handle a stream that has ended: record the turn and decide what is next.
   local function advance()
@@ -167,6 +266,8 @@ function M.run(options)
       dispatch_tools(tool_uses, index + 1, results)
     end
 
+    arm_stall(("running %s"):format(tool_use.name))
+
     registry:dispatch(tool_use, scope, function(outcome)
       if state.finished then
         return
@@ -178,6 +279,10 @@ function M.run(options)
       end
 
       local permission = outcome.needs_permission
+
+      -- A question put to the user has no deadline. The watchdog would
+      -- otherwise abort a run while somebody reads the dialog.
+      disarm_stall()
 
       local function resolve(approved)
         if state.finished then
@@ -194,6 +299,7 @@ function M.run(options)
 
         -- Grant exactly this target once, then run the same call again.
         scope:grant(permission.target)
+        arm_stall(("running %s"):format(tool_use.name))
         registry:dispatch(tool_use, scope, record, { turn = turn })
       end
 
@@ -245,6 +351,9 @@ function M.run(options)
         return
       end
 
+      -- Any event, of any kind, is proof the run is still moving.
+      arm_stall()
+
       on_event(event)
 
       if event.type == "text_delta" then
@@ -276,6 +385,7 @@ function M.run(options)
     }
 
     in_run = true
+    arm_stall("waiting for the model")
     local called, result = pcall(transport.run, request, on_stream_event)
     in_run = false
 

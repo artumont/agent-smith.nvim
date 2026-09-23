@@ -147,15 +147,23 @@ local function receive(state, chunk, emit)
     local usage = chunk.usage
     local fields = {}
 
+    -- Read the cached count first. `prompt_tokens` is the *total* prompt size
+    -- with the cached tokens a subset of it, but the schema's `input_tokens`
+    -- means the uncached part. Reporting the total as `input_tokens` counts the
+    -- cached prefix twice inside Usage.hit_rate, which then cannot exceed 50%
+    -- however good the prefix caching is.
+    local cached = 0
+    if type(usage.prompt_tokens_details) == "table"
+      and type(usage.prompt_tokens_details.cached_tokens) == "number" then
+      cached = usage.prompt_tokens_details.cached_tokens
+      fields.cache_read_tokens = cached
+    end
+
     if type(usage.prompt_tokens) == "number" then
-      fields.input_tokens = usage.prompt_tokens
+      fields.input_tokens = math.max(usage.prompt_tokens - cached, 0)
     end
     if type(usage.completion_tokens) == "number" then
       fields.output_tokens = usage.completion_tokens
-    end
-    if type(usage.prompt_tokens_details) == "table"
-      and type(usage.prompt_tokens_details.cached_tokens) == "number" then
-      fields.cache_read_tokens = usage.prompt_tokens_details.cached_tokens
     end
     if type(usage.completion_tokens_details) == "table"
       and type(usage.completion_tokens_details.reasoning_tokens) == "number" then

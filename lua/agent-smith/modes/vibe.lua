@@ -218,6 +218,14 @@ function M.default_ui()
     notify = function(message, level)
       vim.notify(message, level or vim.log.levels.INFO)
     end,
+    -- The event stream, recorded for the monitor whether or not it is on screen.
+    -- Both phases feed it, so the plan phase's reads are in the log too.
+    event = function(event)
+      require("agent-smith.ui.monitor").get():event(event)
+    end,
+    done = function(result)
+      require("agent-smith.ui.monitor").get():done_run(result)
+    end,
   }
 end
 
@@ -508,6 +516,7 @@ function M.run(options)
       scope = scope,
       conversation = conversation,
       max_turns = options.execute_max_turns or M.EXECUTE_MAX_TURNS,
+      stall_timeout_ms = config.stall_timeout_ms,
       on_event = function(event)
         if tracker then
           tracker:event(event)
@@ -527,6 +536,9 @@ function M.run(options)
       on_done = function(result)
         if tracker then
           tracker:finish(result)
+        end
+        if ui.done then
+          ui.done(result)
         end
         record(result)
         if session.cancelled then
@@ -600,6 +612,7 @@ function M.run(options)
       scope = Scope.vibe({ paths = {}, blacklist = sandbox.blacklist or {} }),
       conversation = conversation,
       max_turns = options.plan_max_turns or M.PLAN_MAX_TURNS,
+      stall_timeout_ms = config.stall_timeout_ms,
       on_event = function(event)
         if tracker then
           tracker:event(event)
@@ -611,6 +624,9 @@ function M.run(options)
       on_done = function(result)
         if tracker then
           tracker:finish(result)
+        end
+        if ui.done then
+          ui.done(result)
         end
         record(result)
         if session.cancelled then

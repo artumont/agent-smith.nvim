@@ -22,6 +22,8 @@ return function(t)
     t.it("registers the default keymaps", function()
       t.eq(vim.fn.maparg(",as", "v") ~= "", true, "visual inline keymap")
       t.eq(vim.fn.maparg(",av", "n") ~= "", true, "normal vibe keymap")
+      t.eq(vim.fn.maparg(",ax", "n") ~= "", true, "cancel keymap")
+      t.eq(vim.fn.maparg(",am", "n") ~= "", true, "stream monitor keymap")
     end)
 
     t.it("can skip keymaps", function()
@@ -43,6 +45,7 @@ return function(t)
       -- keymaps and documentation do not need to change when they land.
       t.eq(type(Smith.inline), "function")
       t.eq(type(Smith.vibe), "function")
+      t.eq(type(Smith.monitor), "function")
     end)
 
     t.it("does not raise when a mode is invoked", function()

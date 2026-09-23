@@ -50,6 +50,9 @@ by accident.
 | [0010](decisions/0010-integrated-providers-are-presets.md) | Integrated providers are presets, not transports | Accepted |
 | [0011](decisions/0011-credentials-encrypted-at-rest.md) | Credentials are encrypted at rest | Accepted |
 | [0012](decisions/0012-models-are-fetched-not-catalogued.md) | Models are fetched, not catalogued | Accepted |
+| [0013](decisions/0013-usage-input-tokens-excludes-cached.md) | `input_tokens` means uncached prompt tokens | Accepted |
+| [0014](decisions/0014-stalled-runs-are-aborted.md) | A stalled run is aborted on inactivity | Accepted |
+| [0015](decisions/0015-the-event-stream-is-visible.md) | The event stream is visible | Accepted |
 
 ## Other documents
 

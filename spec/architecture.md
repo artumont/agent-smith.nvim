@@ -62,6 +62,7 @@ lua/agent-smith/
     approval.lua        approving an escalated tool call
     progress.lua        run status as virtual lines, for inline
     panel.lua           run status as a floating corner panel, for vibe
+    monitor.lua         the event stream, as a scratch buffer in a split
     diff.lua            reviewing a patch before it is applied
 ```
 
@@ -83,6 +84,16 @@ ui/modes ──prompt──> agent/loop ──request──> transport ──SSE
 The loop's only inputs and outputs are typed events
 ([0002](decisions/0002-typed-event-contract.md)). It has no knowledge of vendors
 and no knowledge of Neovim buffers.
+
+Both modes tap the stream twice: once for the status display, and once for
+[`ui/monitor.lua`](decisions/0015-the-event-stream-is-visible.md), which records
+every event in a scratch buffer so a run can be read back after the fact. The
+status says what is happening; the monitor is the evidence.
+
+A turn that produces no event at all is a stall, and the loop aborts it rather
+than waiting forever ([0014](decisions/0014-stalled-runs-are-aborted.md)). The
+budget is inactivity, not duration, so a slow stream is never mistaken for a
+hung one, and it is disarmed while a permission question is pending.
 
 ### Transport interface
 

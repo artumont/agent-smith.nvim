@@ -53,6 +53,23 @@ return function(t)
       local config = vim.tbl_deep_extend("force", Config.defaults, { progress = { position = 1 } })
       t.eq(Config.validate(config), false)
     end)
+
+    t.it("accepts a stall budget, including zero to disable it", function()
+      t.eq(Config.validate(Config.defaults), true)
+      t.eq(Config.validate(vim.tbl_deep_extend("force", Config.defaults, { stall_timeout_ms = 0 })), true)
+      t.eq(Config.validate(vim.tbl_deep_extend("force", Config.defaults, { stall_timeout_ms = 500 })), true)
+    end)
+
+    t.it("rejects a stall budget that is not a number of milliseconds", function()
+      -- A negative or non-numeric budget would silently arm a timer that fires
+      -- immediately (or never), which is worse than refusing to start.
+      local negative = vim.tbl_deep_extend("force", Config.defaults, { stall_timeout_ms = -1 })
+      local ok, err = Config.validate(negative)
+      t.eq(ok, false)
+      t.matches(err, "stall_timeout_ms")
+
+      t.eq(Config.validate(vim.tbl_deep_extend("force", Config.defaults, { stall_timeout_ms = "2m" })), false)
+    end)
   end)
 
   t.describe("config.resolve", function()

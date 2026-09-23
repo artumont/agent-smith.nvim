@@ -77,6 +77,7 @@ return function(t)
       scope = options.scope or scope,
       conversation = conversation,
       max_turns = options.max_turns,
+      stall_timeout_ms = options.stall_timeout_ms,
       on_event = function(event)
         record.events[#record.events + 1] = event
       end,
@@ -485,6 +486,104 @@ return function(t)
 
       local record = run({ transport = transport })
       t.eq(record.conversation:list()[1].content, "kept")
+    end)
+  end)
+
+  t.describe("loop: the stall watchdog", function()
+    t.it("writes a budget as seconds, with a decimal only when it is not whole", function()
+      t.eq(Loop.format_seconds(120000), "120 s")
+      t.eq(Loop.format_seconds(1600), "1.6 s")
+    end)
+
+    t.it("aborts a run that stops producing events", function()
+      local transport = open_transport()
+      -- 1.6 s rather than something quick, because the message rounds to whole
+      -- seconds and a shorter budget would print "no activity for 0 s".
+      local record = run({ transport = transport, stall_timeout_ms = 1600 })
+
+      t.eq(#record.results, 0, "the request is open")
+      t.ok(t.settle(function()
+        return #record.results > 0
+      end, 4000), "the watchdog fires")
+
+      t.eq(record.results[1].ok, false)
+      t.eq(record.results[1].reason, "stalled")
+      t.matches(record.results[1].error, "no activity for 1.6 s while waiting for the model")
+      t.eq(record.results[1].cancelled, false, "a stall is not the user cancelling")
+      t.eq(transport.cancelled, true, "the in-flight request is stopped")
+    end)
+
+    t.it("counts inactivity, not duration", function()
+      -- A slow stream is a working stream. Every event resets the budget, so a
+      -- request that dribbles tokens for longer than the whole budget still
+      -- finishes instead of being killed for being slow.
+      local transport = open_transport()
+      local record = run({ transport = transport, stall_timeout_ms = 150 })
+
+      for _ = 1, 5 do
+        vim.wait(60, function()
+          return false
+        end)
+        transport.emit(Events.text_delta("."))
+      end
+
+      t.eq(#record.results, 0, "300 ms of events against a 150 ms budget is not a stall")
+
+      transport.emit(Events.done("complete"))
+      t.eq(record.results[1].reason, "complete")
+      t.eq(record.results[1].ok, true)
+    end)
+
+    t.it("does not count time spent waiting on the user", function()
+      -- A permission dialog has no deadline. A watchdog that fired while
+      -- somebody read it would abort a run for the crime of asking.
+      local ran = false
+      local buffer = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_name(buffer, "/tmp/loop-watchdog/a.lua")
+
+      local record = run({
+        transport = fake({
+          {
+            Events.tool_use("call_1", "echo", { path = "/tmp/loop-watchdog/b.lua" }),
+            Events.done("tool_calls"),
+          },
+          { Events.done("complete") },
+        }),
+        tools = registry_with(function()
+          ran = true
+          return Registry.ok("edited")
+        end, {
+          access = "write",
+          parameters = { path = { type = "string", required = true } },
+          locate = function(arguments)
+            return { kind = "write", path = arguments.path, range = { start_row = 1, end_row = 1 } }
+          end,
+        }),
+        -- A write outside the selection escalates in inline mode.
+        scope = Scope.inline({ buffer = buffer, start_row = 1, end_row = 1 }),
+        stall_timeout_ms = 150,
+        on_permission = function(_, decide)
+          vim.wait(300, function()
+            return false
+          end)
+          decide(true)
+        end,
+      })
+
+      t.eq(ran, true, "the approved tool ran")
+      t.eq(record.results[1].reason, "complete", "and the decision was waited out")
+    end)
+
+    t.it("is disabled by a budget of zero", function()
+      local transport = open_transport()
+      local record = run({ transport = transport, stall_timeout_ms = 0 })
+
+      t.eq(t.settle(function()
+        return #record.results > 0
+      end, 250), false)
+
+      record.handle:cancel()
+      t.eq(#record.results, 1)
     end)
   end)
 

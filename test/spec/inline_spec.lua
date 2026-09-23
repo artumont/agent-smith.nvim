@@ -339,6 +339,25 @@ return function(t)
       t.matches(record.notifications[#record.notifications], "90%% cache hit")
     end)
 
+    t.it("says why when the run stopped badly", function()
+      -- A failure that reports only its token usage tells the user nothing
+      -- about what went wrong, which is exactly what a stall produces.
+      local f = fixture({ "a" }, 1, 1)
+      local record = ui()
+      local transport = fake({
+        {
+          Events.usage({ input_tokens = 10 }),
+          Events.error("the vendor fell over"),
+        },
+      })
+
+      run({ buffer = f.buffer, root = f.root, instruction = "x", transport = transport, ui = record })
+
+      local message = record.notifications[#record.notifications]
+      t.matches(message, "10 in")
+      t.matches(message, "the vendor fell over")
+    end)
+
     t.it("passes max_turns through", function()
       local f = fixture({ "a" }, 1, 1)
       local transport = fake({
