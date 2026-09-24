@@ -8,7 +8,7 @@ local Config = require("agent-smith.config")
 
 local M = {}
 
-M.version = "0.2.0"
+M.version = "0.2.1"
 
 --- Resolved configuration. Nil until setup() is called.
 M.config = nil
@@ -300,10 +300,10 @@ end
 
 local function register_keymaps()
   local maps = {
-    { mode = "v", lhs = "<leader>as", rhs = M.inline, desc = "agent-smith inline edit" },
-    { mode = "n", lhs = "<leader>av", rhs = M.vibe, desc = "agent-smith vibe" },
-    { mode = "n", lhs = "<leader>ax", rhs = M.cancel, desc = "agent-smith cancel" },
-    { mode = "n", lhs = "<leader>am", rhs = M.monitor, desc = "agent-smith stream monitor" },
+    { mode = "v", lhs = "<leader>as", rhs = M.inline, desc = "Prompt inline edit" },
+    { mode = "n", lhs = "<leader>av", rhs = M.vibe, desc = "Prompt vibe session" },
+    { mode = "n", lhs = "<leader>ax", rhs = M.cancel, desc = "Cancel ongoing agent sessions" },
+    { mode = "n", lhs = "<leader>am", rhs = M.monitor, desc = "Monitor ongoing agent sessions" },
   }
   for _, map in ipairs(maps) do
     vim.keymap.set(map.mode, map.lhs, map.rhs, { desc = map.desc })
