@@ -53,6 +53,7 @@ by accident.
 | [0013](decisions/0013-usage-input-tokens-excludes-cached.md) | `input_tokens` means uncached prompt tokens | Accepted |
 | [0014](decisions/0014-stalled-runs-are-aborted.md) | A stalled run is aborted on inactivity | Accepted |
 | [0015](decisions/0015-the-event-stream-is-visible.md) | The event stream is visible | Accepted |
+| [0016](decisions/0016-steering-is-delivered-on-the-next-turn.md) | A steer is delivered on the next turn | Accepted |
 
 ## Other documents
 

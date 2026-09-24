@@ -39,9 +39,11 @@ return function(t)
 
   --- A transport whose stream stays open until the test drives it.
   local function open_transport()
-    local transport = { calls = 0 }
-    function transport.run(_, on_event)
+    local transport = { calls = 0, requests = {} }
+    function transport.run(request, on_event)
       transport.calls = transport.calls + 1
+      transport.requests[#transport.requests + 1] = request
+      transport.last_request = request
       transport.emit = on_event
       return { cancel = function() transport.cancelled = true end }
     end
@@ -584,6 +586,99 @@ return function(t)
 
       record.handle:cancel()
       t.eq(#record.results, 1)
+    end)
+  end)
+
+  t.describe("loop: steering", function()
+    t.it("carries the steer into the next request, not the one in flight", function()
+      -- The turn already streaming cannot be re-told: the transport has the prompt
+      -- and is answering. The window a user actually steers in is while a tool
+      -- runs, so the tool is held open here — which is also what proves the steer
+      -- is not retro-fitted into a request that has already been sent.
+      local transport = open_transport()
+      local finish_tool
+      local tools = registry_with(function(_, context)
+        finish_tool = context.finish
+        return nil
+      end)
+
+      local record = run({ transport = transport, tools = tools })
+      transport.emit(tool_event("call_1", "echo"))
+      transport.emit(Events.done("tool_calls"))
+
+      t.eq(transport.calls, 1, "no new request until the tool answers")
+      t.not_ok(
+        tostring(transport.requests[1].messages):find("also check", 1, true),
+        "the steer cannot be in the request that was already sent"
+      )
+
+      t.eq(record.handle:steer("also check the tests"), true)
+      finish_tool(Registry.ok("done"))
+
+      t.eq(transport.calls, 2, "the next request is built after the steer")
+      local messages = transport.requests[2].messages
+      local last = messages[#messages]
+      t.eq(last.role, "user")
+      t.eq(last.content, "also check the tests")
+    end)
+
+    t.it("extends the run instead of dropping what was typed", function()
+      -- A steer accepted while the model is finishing its answer would otherwise
+      -- vanish: accepted, logged, never sent. It gets a turn instead.
+      local transport = open_transport()
+      local record = run({ transport = transport })
+
+      t.eq(record.handle:steer("  go left  "), true)
+      transport.emit(Events.done("complete"))
+
+      t.eq(transport.calls, 2, "another request, rather than a finish")
+      local messages = transport.requests[2].messages
+      t.eq(messages[#messages].role, "user")
+      t.eq(messages[#messages].content, "go left", "trimmed")
+
+      transport.emit(Events.done("complete"))
+      t.eq(record.results[1].ok, true)
+      t.eq(record.results[1].steered, 1)
+      t.eq(record.results[1].undelivered_steers, 0)
+    end)
+
+    t.it("refuses a blank steer, and one for a run that has stopped", function()
+      -- A blank line would be appended and sent as a turn of nothing, and a run
+      -- that has finished has no next request to carry it.
+      local transport = open_transport()
+      local record = run({ transport = transport })
+
+      t.eq(record.handle:steer("   "), false)
+      t.eq(record.handle:steer(nil), false)
+      t.eq(record.handle:steer("fine"), true)
+
+      record.handle:cancel()
+      t.eq(record.handle:steer("too late"), false)
+
+      for _, message in ipairs(record.conversation:list()) do
+        t.not_ok(message.content == "too late", "a refused steer is not in the conversation")
+      end
+    end)
+    t.it("is bounded by max_turns, and reports what never arrived", function()
+      -- A pending steer extends the run, which must not mean an unbounded one: the
+      -- turn budget still decides. What it could not deliver is counted, because
+      -- the alternative to reporting it is a message that was accepted, logged and
+      -- silently discarded — indistinguishable from the model ignoring it.
+      local transport = open_transport()
+      local record = run({ transport = transport, max_turns = 2 })
+
+      t.eq(record.handle:steer("first"), true)
+      transport.emit(Events.done("complete"))
+      t.eq(transport.calls, 2, "the steer earned a second turn")
+
+      t.eq(record.handle:steer("second"), true)
+      transport.emit(Events.done("complete"))
+
+      local result = record.results[1]
+      t.eq(result.reason, "max_turns", "the third turn the second steer wanted is not allowed")
+      t.eq(result.steered, 1, "the first was delivered")
+      t.eq(result.undelivered_steers, 1, "and the second is not pretending otherwise")
+      t.eq(transport.calls, 2)
     end)
   end)
 

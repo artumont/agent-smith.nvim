@@ -46,6 +46,15 @@ return function(t)
       t.eq(type(Smith.inline), "function")
       t.eq(type(Smith.vibe), "function")
       t.eq(type(Smith.monitor), "function")
+      t.eq(type(Smith.steer), "function")
+    end)
+
+    t.it("refuses to steer when there is nothing to steer", function()
+      -- A refusal has to be distinguishable from a message that was accepted and
+      -- then delivered nowhere, because the second reads as a model ignoring the
+      -- user.
+      Smith.cancel()
+      t.eq(Smith.steer("anyone there?"), false)
     end)
 
     t.it("does not raise when a mode is invoked", function()

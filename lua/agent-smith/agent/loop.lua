@@ -90,7 +90,7 @@ end
 ---   - on_done: fun(result)    result = { ok, error?, reason?, turns, usage, cancelled }
 ---   - max_turns: number|nil   Model round trips. Default 10.
 ---   - stall_timeout_ms: number|nil  Inactivity budget. Default 120000, 0 disables.
----@return table handle { cancel = fun() }
+---@return table handle { cancel = fun(), steer = fun(text) -> boolean }
 function M.run(options)
   assert(type(options) == "table", "loop.run needs an options table")
   local transport = assert(options.transport, "the loop needs a transport")
@@ -109,7 +109,7 @@ function M.run(options)
     stall_timeout_ms = M.DEFAULT_STALL_TIMEOUT_MS
   end
 
-  local state = { finished = false, cancelled = false, usage = {}, activity = "running" }
+  local state = { finished = false, cancelled = false, usage = {}, activity = "running", pending = {}, steered = 0 }
   local handle = {}
   local turn = 0
   local transport_handle = nil
@@ -144,6 +144,11 @@ function M.run(options)
     result.usage = state.usage
     result.cancelled = state.cancelled
     result.turns = turn
+    -- Steers that reached the model, and steers the run ended before it could
+    -- deliver — the second is what makes a dropped message visible instead of
+    -- silent.
+    result.steered = state.steered
+    result.undelivered_steers = #state.pending
     -- Rendered here so a caller has something to show without reimplementing
     -- the arithmetic. Cost is not included: that needs per-model prices.
     result.summary = Usage.render(state.usage, { turns = turn })
@@ -242,6 +247,14 @@ function M.run(options)
       return
     end
 
+    if #state.pending > 0 then
+      -- The user had something to add while this turn was streaming, so answer it
+      -- rather than stopping on them. `max_turns` still bounds the run, and
+      -- whatever never made it is counted in the result.
+      next_turn()
+      return
+    end
+
     finish({ ok = true, reason = current.reason or "complete" })
   end
 
@@ -334,6 +347,16 @@ function M.run(options)
 
     turn = turn + 1
 
+    -- Anything steered while the previous turn ran goes in here, as the last user
+    -- message before the request. See `handle:steer` for why it waits until now.
+    if #state.pending > 0 then
+      for _, message in ipairs(state.pending) do
+        conversation:append_user(message)
+      end
+      state.steered = state.steered + #state.pending
+      state.pending = {}
+    end
+
     local current = { text = "", thinking = "", tool_uses = {}, error = nil, reason = nil, ended = false }
     turn_state = current
 
@@ -412,6 +435,43 @@ function M.run(options)
       pcall(transport_handle.cancel, transport_handle)
     end
     finish({ ok = false, error = "cancelled", reason = "cancelled" })
+  end
+
+  --- Say something to the model while the run is in flight.
+  ---
+  --- The message is **queued**, and flushed when the next request is built:
+  ---
+  ---   - Not delivered to the turn already streaming. The transport has been told
+  ---     what the prompt is and is mid-answer; steering means "take this into
+  ---     account from here on", and cancelling is what an interruption is.
+  ---   - Not delivered at the moment it arrives. A steer usually arrives while a
+  ---     tool is running, and the conversation at that point is one assistant
+  ---     message holding `tool_use`s whose results have not been appended yet.
+  ---     Appending a user message there would put it between the tool calls and
+  ---     their results, which neither wire format accepts: results must follow the
+  ---     calls they answer. Flushing at the start of a turn puts it after them.
+  ---   - Not droppable either. A steer that arrives as the model stops would
+  ---     otherwise be lost silently, having been accepted and logged, so a pending
+  ---     steer makes the run continue for one more turn (`max_turns` still bounds
+  ---     it). What the user typed reaches the model, or the run ends because it ran
+  ---     out of turns, and the count of what never arrived is in the result.
+  ---@param text string
+  ---@return boolean accepted False when the run is over or the text is blank.
+  function handle:steer(text)
+    if state.finished or state.cancelled then
+      return false
+    end
+    if type(text) ~= "string" then
+      return false
+    end
+
+    local message = vim.trim(text)
+    if message == "" then
+      return false
+    end
+
+    state.pending[#state.pending + 1] = message
+    return true
   end
 
   next_turn()

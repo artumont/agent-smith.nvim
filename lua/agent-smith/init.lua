@@ -200,6 +200,25 @@ function M.monitor()
   return monitor
 end
 
+--- Say something to the run in flight, for the model to reach on its next turn.
+---
+--- Queued rather than delivered to the turn already streaming, because a transport
+--- mid-answer cannot be re-told what the prompt is. What the answer means depends
+--- on the mode and the phase — a vibe run holds it as an execution note while it is
+--- still planning — so this returns whatever the run said it did:
+--- see spec/decisions/0016-steering-is-delivered-on-the-next-turn.md.
+---
+--- A falsy answer means nothing took it: text that appears accepted and is then
+--- delivered nowhere looks exactly like a model that ignored it.
+---@param text string
+---@return string|boolean "queued", "notes", or false when there is nothing to steer.
+function M.steer(text)
+  if active and type(active.steer) == "function" then
+    return active.steer(active, text)
+  end
+  return false
+end
+
 --- Stop the in-flight request, if there is one.
 ---@return boolean cancelled
 function M.cancel()
