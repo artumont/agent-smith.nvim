@@ -143,6 +143,28 @@ return function(t)
       t.matches(message, "`plan`")
     end)
 
+    t.it("identifies itself in both phases, before anything else", function()
+      -- Both conversations carry it: the plan phase and the execute phase are two
+      -- requests to two different conversations, and only one of them knowing what
+      -- it is talking as would be worse than neither.
+      local root = repo({ ["greet.lua"] = { 'return "hello"' } })
+      local sandbox = sandbox_root()
+      local transport = fake(script(PLAN, {
+        path = "greet.lua",
+        start_row = 1,
+        end_row = 1,
+        text = 'return "hello,"',
+      }))
+
+      start({ root = root, transport = transport, ui = ui(), sandbox = sandbox })
+
+      local intro = require("agent-smith.agent.identity").intro()
+      t.ok(transport.requests[1].system:find(intro, 1, true) == 1, "the plan prompt")
+      t.ok(transport.requests[3].system:find(intro, 1, true) == 1, "and the execute prompt")
+      t.matches(transport.requests[1].system, "planning a change")
+      t.matches(transport.requests[3].system, "approved plan")
+    end)
+
     t.it("restates the approved plan as the contract", function()
       local message = Vibe.execution_message("add a comma", PLAN)
       t.matches(message, "add a comma")

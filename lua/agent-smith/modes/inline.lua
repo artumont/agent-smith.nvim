@@ -19,6 +19,7 @@
 --- the answer arrives. A session whose preconditions fail returns nil and a
 --- reason without ever opening a prompt.
 
+local Identity = require("agent-smith.agent.identity")
 local Loop = require("agent-smith.agent.loop")
 local Messages = require("agent-smith.agent.messages")
 local Monitor = require("agent-smith.ui.monitor")
@@ -42,7 +43,8 @@ M.DEFAULT_POSITION = "above"
 ---
 --- Short on purpose. The tool schemas already describe the tools, and the
 --- permission system enforces the bound, so the prompt only has to stop the
---- model from being surprised by either.
+--- model from being surprised by either. Who it *is* comes from
+--- `agent/identity.lua`, which this is passed through on its way to the model.
 M.SYSTEM_PROMPT = table.concat({
   "You are editing one region of one file inside a running Neovim.",
   "",
@@ -247,7 +249,7 @@ function M.run(options)
     local lines = vim.api.nvim_buf_get_lines(buffer, range.start_row - 1, range.end_row, false)
 
     local conversation = Messages.new({
-      system = M.SYSTEM_PROMPT,
+      system = Identity.system(M.SYSTEM_PROMPT),
       id = Session.id({ root = root, mode = M.MODE }),
     })
     conversation:append_user(user_message(Paths.display(root, name), range, lines, instruction))

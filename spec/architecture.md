@@ -26,6 +26,7 @@ lua/agent-smith/
     commandcode.lua     Command Code
 
   agent/
+    identity.lua        who the model is told it is, in front of every prompt
     events.lua          typed event schema — the core contract
     loop.lua            turn loop, dispatch, stop conditions, cancel
     messages.lua        conversation state (compaction not designed yet)
@@ -58,11 +59,13 @@ lua/agent-smith/
     vibe.lua            plan, approve, execute, review
 
   ui/
+    float.lua           the centred float prompt and monitor are built from
     prompt.lua          instruction entry, in a floating buffer
     approval.lua        approving an escalated tool call
     progress.lua        run status as virtual lines, for inline
     panel.lua           run status as a floating corner panel, for vibe
-    monitor.lua         the event stream, as a scratch buffer in a split
+    monitor.lua         the event stream, in a floating scratch buffer, and the
+                        steer input docked along its bottom
     diff.lua            reviewing a patch before it is applied
 ```
 
@@ -84,6 +87,12 @@ ui/modes ──prompt──> agent/loop ──request──> transport ──SSE
 The loop's only inputs and outputs are typed events
 ([0002](decisions/0002-typed-event-contract.md)). It has no knowledge of vendors
 and no knowledge of Neovim buffers.
+
+Each mode's system prompt is its own body behind the shared identity paragraph in
+`agent/identity.lua`, which is what stops a model asserting a tool this plugin does
+not have because it believes it is a different product. There are three prompts —
+one per phase — so the identity is composed in one place rather than copied into
+each.
 
 Both modes tap the stream twice: once for the status display, and once for
 [`ui/monitor.lua`](decisions/0015-the-event-stream-is-visible.md), which records

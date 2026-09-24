@@ -223,7 +223,13 @@ return function(t)
       local transport = fake({})
       run({ buffer = f.buffer, root = f.root, instruction = "x", transport = transport, ui = ui() })
 
-      t.matches(transport.requests[1].system, "only place you may write")
+      local system = transport.requests[1].system
+      t.matches(system, "only place you may write")
+
+      -- And it is told what it is before it is told what to do: the identity is the
+      -- first thing in the prompt, not a line somewhere in the middle.
+      local intro = require("agent-smith.agent.identity").intro()
+      t.ok(system:find(intro, 1, true) == 1, "the identity comes first")
     end)
 
     t.it("identifies the conversation as inline", function()

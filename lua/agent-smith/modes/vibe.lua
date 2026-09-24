@@ -41,6 +41,7 @@ local Diff = require("agent-smith.ui.diff")
 local Loop = require("agent-smith.agent.loop")
 local Messages = require("agent-smith.agent.messages")
 local Paths = require("agent-smith.tools.paths")
+local Identity = require("agent-smith.agent.identity")
 local Provider = require("agent-smith.providers")
 local Scope = require("agent-smith.agent.scope")
 local Session = require("agent-smith.session")
@@ -59,6 +60,7 @@ M.PLAN_MAX_TURNS = 12
 --- actually does the work and every write is bounded by the plan.
 M.EXECUTE_MAX_TURNS = 30
 
+--- The plan phase's body, behind the shared identity in `agent/identity.lua`.
 M.PLAN_PROMPT = table.concat({
   "You are planning a change to a project before anyone is allowed to make it.",
   "",
@@ -76,6 +78,7 @@ M.PLAN_PROMPT = table.concat({
   "After calling `plan`, stop.",
 }, "\n")
 
+--- The execute phase's body, behind the same identity.
 M.EXECUTE_PROMPT = table.concat({
   "You are carrying out an approved plan in a throwaway clone of the project.",
   "",
@@ -552,7 +555,7 @@ function M.run(options)
     end
 
     local conversation = Messages.new({
-      system = M.EXECUTE_PROMPT,
+      system = Identity.system(M.EXECUTE_PROMPT),
       id = Session.id({ root = root, mode = "vibe-execute" }),
     })
     conversation:append_user(M.execution_message(session.instruction, plan, session.notes))
@@ -654,7 +657,7 @@ function M.run(options)
 
     local captured = nil
     local conversation = Messages.new({
-      system = M.PLAN_PROMPT,
+      system = Identity.system(M.PLAN_PROMPT),
       id = Session.id({ root = root, mode = "vibe-plan" }),
     })
     conversation:append_user(M.plan_message(instruction))

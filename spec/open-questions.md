@@ -134,3 +134,28 @@ side is currently bounded by nothing.
 
 **Blocks:** nothing mechanically. Should be settled before `bash` and the read
 tools are considered done, because it changes what the tools may return.
+
+## Q10. Is the agent's identity configurable?
+
+**Status:** Open — no decision record yet.
+
+**Open because:** `agent/identity.lua` writes the name, the author and the "not
+Claude Code" line into every system prompt, and there is no way to change any of
+it. A fork with a different name, or a user who wants the agent to introduce
+itself differently, has to edit the plugin.
+
+Against configuring it: the paragraph exists to stop a specific failure — a model
+asserting a tool it does not have because it thinks it is another product — and a
+setting invites the user to break that without knowing what it was for. The
+tool-list sentence is load-bearing in a way a name is not.
+
+**Candidates:**
+
+| Approach | Cost |
+|---|---|
+| Leave it hardcoded | simplest, and a fork edits the file |
+| `config.identity` replacing the whole paragraph | one string, and the load-bearing part is the user's to lose |
+| `config.name` / `config.author`, paragraph fixed | keeps the guarantees, covers the likely want |
+| No name at all: describe the situation, not the product | shortest prompt, and gives up on "do not claim to be Claude Code" |
+
+**Blocks:** nothing. Worth settling before anyone forks it for the name alone.
