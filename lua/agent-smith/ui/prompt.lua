@@ -31,6 +31,8 @@
 ---
 --- Never blocks: the answer arrives through `on_submit`.
 
+local Float = require("agent-smith.ui.float")
+
 local M = {}
 
 M.NAMESPACE = vim.api.nvim_create_namespace("agent-smith-prompt")
@@ -62,29 +64,15 @@ end
 
 local counter = 0
 
---- The float, sized to the editor and centred.
-local function open_float(buffer, title, footer)
-  local width = math.max(math.min(M.WIDTH, vim.o.columns - 4), 20)
-  local height = math.max(math.min(M.HEIGHT, vim.o.lines - 4), 1)
-
-  return vim.api.nvim_open_win(buffer, true, {
-    relative = "editor",
-    width = width,
-    height = height,
-    row = math.max(math.floor((vim.o.lines - height) / 2) - 1, 0),
-    col = math.max(math.floor((vim.o.columns - width) / 2), 0),
-    style = "minimal",
-    border = "rounded",
-    title = title or " agent-smith ",
-    title_pos = "left",
-    footer = footer,
-    footer_pos = "center",
-  })
-end
-
 --- Open a prompt.
 ---
----@param fields table { prompt: string|nil, on_submit: fun(text: string|nil) }
+--- `at` and `border` are passed through to `ui/float.lua` and are what make this
+--- reusable away from the centre of the screen: the monitor's steer input is this
+--- same window, docked along the bottom of another float, because "type here and
+--- `:w` sends it" is one behaviour and should not exist twice.
+---
+---@param fields table { prompt: string|nil, on_submit: fun(text: string|nil),
+---   at: table|nil, border: table|string|nil }
 ---@return table handle { cancel = fun() }
 function M.ask(fields)
   fields = fields or {}
@@ -100,7 +88,15 @@ function M.ask(fields)
 
   -- The prompt opens in insert, so the first hint the user sees has to be the
   -- insert-mode one.
-  local window = open_float(buffer, fields.prompt, M.hint("i"))
+  local window = Float.open({
+    buffer = buffer,
+    title = fields.prompt,
+    footer = M.hint("i"),
+    width = M.WIDTH,
+    height = M.HEIGHT,
+    at = fields.at,
+    border = fields.border,
+  })
 
   local resolved = false
 

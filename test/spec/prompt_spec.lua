@@ -96,6 +96,32 @@ return function(t)
       t.matches(config.title[1][1], "test")
       handle.cancel()
     end)
+
+    t.it("can be docked instead of centred", function()
+      -- The monitor's steer input is this prompt, pinned to the bottom of the
+      -- monitor float. Same behaviour — type, `:w` sends, `q` closes — in a place
+      -- the caller chose.
+      local record = { calls = 0 }
+      local handle = Prompt.ask({
+        prompt = " steer ",
+        on_submit = function(text)
+          record.calls = record.calls + 1
+          record.text = text
+        end,
+        at = { row = 5, col = 4, width = 30, height = 2 },
+        border = { "", "─", "", "", "", "", "", "" },
+      })
+
+      local config = vim.api.nvim_win_get_config(handle.window)
+      t.eq({ config.row, config.col, config.width, config.height }, { 5, 4, 30, 2 })
+      t.eq(config.border[2], "─")
+
+      vim.api.nvim_buf_set_lines(handle.buffer, 0, -1, false, { "left a bit" })
+      vim.api.nvim_exec_autocmds("BufWriteCmd", { buffer = handle.buffer })
+
+      t.eq(settled(record).text, "left a bit")
+      t.eq(vim.api.nvim_win_is_valid(handle.window), false, "and it closes itself")
+    end)
   end)
 
   t.describe("prompt: closing", function()
