@@ -119,6 +119,16 @@ caller, and on approval grants that exact target once in the scope and
 re-dispatches the same call. With nobody to ask, the request is refused:
 silence is not consent.
 
+### Steering
+
+The handle's other verb is `steer(text)`: a message for the model while the run is
+in flight, which the monitor's `s` input sends. It is **queued**, not appended on
+arrival, and flushed at the start of the next turn — after any tool results, which
+is the only place in the conversation a user message is valid mid-run. A steer
+that arrives as the model stops gives the run one more turn rather than being
+dropped, `max_turns` still bounds it, and what never left is counted in the
+result. See [0016](decisions/0016-steering-is-delivered-on-the-next-turn.md).
+
 ## The two modes
 
 Both modes are terminal: they end in an accepted or rejected change.

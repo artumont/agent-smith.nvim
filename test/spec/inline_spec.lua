@@ -358,6 +358,34 @@ return function(t)
       t.matches(message, "the vendor fell over")
     end)
 
+    t.it("forwards a steer to the loop that is running", function()
+      -- The monitor's steer input reaches the loop through the session, and the
+      -- session is the only thing that knows which phase is in flight.
+      local f = fixture({ "a" }, 1, 1)
+      local transport = {}
+      function transport.run(_, on_event)
+        transport.emit = on_event
+        return { cancel = function() end }
+      end
+
+      local outcome = run({
+        buffer = f.buffer,
+        root = f.root,
+        instruction = "x",
+        transport = transport,
+        ui = ui(),
+      })
+
+      t.eq(outcome.handle:steer("check the tests too"), "queued")
+      -- The steer gives the run another turn, so one terminal event is not enough.
+      transport.emit(Events.done("complete"))
+      transport.emit(Events.done("complete"))
+
+      t.eq(outcome.results[1].ok, true)
+      t.eq(outcome.results[1].steered, 1)
+      t.eq(outcome.handle:steer("too late"), false, "and refuses once the run is over")
+    end)
+
     t.it("passes max_turns through", function()
       local f = fixture({ "a" }, 1, 1)
       local transport = fake({

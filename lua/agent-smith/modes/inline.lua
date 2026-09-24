@@ -225,6 +225,19 @@ function M.run(options)
     return true
   end
 
+  --- Say something to the model while the run is in flight.
+  ---
+  --- Forwarded to the loop, which only accepts it while it is still running — so
+  --- a steer that arrives after the loop finished is refused by the same rule as one
+  --- for a run that never started, rather than being quietly held.
+  ---@return string|boolean "queued" when the loop took it, false when it could not.
+  function session:steer(text)
+    if self.loop and type(self.loop.steer) == "function" then
+      return self.loop:steer(text) and "queued" or false
+    end
+    return false
+  end
+
   --- Everything after the instruction is known.
   local function start(instruction)
     if session.cancelled then

@@ -156,6 +156,102 @@ return function(t)
       local message = Vibe.execution_message("x", { summary = "y" })
       t.matches(message, "Files you may modify %(0%)")
     end)
+
+    t.it("lists what the user added while the plan was being made", function()
+      -- Nothing else carries these, so if this dropped them the message would be
+      -- accepted and then never seen by anyone.
+      local message = Vibe.execution_message("x", PLAN, { "use a comma", "and a space" })
+      t.matches(message, "Also required, added while this was being planned %(2%)")
+      t.matches(message, "1%. use a comma")
+      t.matches(message, "2%. and a space")
+      t.ok(message:find("Carry it out now", 1, true) > message:find("and a space", 1, true),
+        "the notes come before the instruction to start")
+
+      -- And an empty list changes nothing, which is what every other caller passes.
+      t.eq(Vibe.execution_message("x", PLAN, {}), Vibe.execution_message("x", PLAN))
+    end)
+  end)
+
+  t.describe("vibe: steering", function()    --- A transport the test drives, one request at a time. Steering happens while
+    --- something is in flight, so the scripted fake — which answers everything at
+    --- once — cannot test it.
+    local function deferred()
+      local transport = { calls = 0, requests = {}, emits = {} }
+      function transport.run(request, on_event)
+        transport.calls = transport.calls + 1
+        transport.requests[#transport.requests + 1] = request
+        transport.emits[transport.calls] = on_event
+        return { cancel = function() end }
+      end
+      return transport
+    end
+
+    local function begin(root, sandbox, transport, record)
+      return Vibe.run({
+        root = root,
+        instruction = "change it",
+        transport = transport,
+        ui = record.ui,
+        config = { sandbox = { root = sandbox, blacklist = {} } },
+      })
+    end
+
+    t.it("holds a steer typed while planning, and hands it to the executor", function()
+      local root = repo({ ["greet.lua"] = { 'return "hello"' } })
+      local sandbox = sandbox_root()
+      local transport = deferred()
+      local record = ui()
+
+      local handle = begin(root, sandbox, transport, record)
+      t.ok(handle, "the run started")
+
+      -- Still planning: there is no conversation that can act on it, and the plan
+      -- is what the user is about to approve anyway.
+      t.eq(handle:steer("use a comma, not a full stop"), "notes")
+      t.not_ok(
+        tostring(transport.requests[1].messages):find("not a full stop", 1, true),
+        "the planner was not told"
+      )
+
+      -- The planner calls `plan`, then finishes; the fake approves it, so the
+      -- execute phase is the one asking next.
+      transport.emits[1](Events.tool_use("p1", "plan", PLAN))
+      transport.emits[1](Events.done("tool_calls"))
+      transport.emits[2](Events.done("complete"))
+
+      t.eq(transport.calls, 3, "plan phase, then execute")
+      local opening = transport.requests[3].messages[1]
+      t.eq(opening.role, "user")
+      t.matches(opening.content, "Also required, added while this was being planned %(1%)")
+      t.matches(opening.content, "use a comma, not a full stop")
+
+      -- And once execution is running the same key goes to that conversation, as
+      -- an instruction with the context it is already holding.
+      t.eq(handle:steer("also update the docs"), "queued")
+      transport.emits[3](Events.done("complete"))
+
+      local steered = transport.requests[4].messages
+      t.eq(steered[#steered].role, "user")
+      t.eq(steered[#steered].content, "also update the docs")
+
+      handle:cancel()
+    end)
+
+    t.it("refuses a steer before there is a plan, and after execution ends", function()
+      local root = repo({ ["greet.lua"] = { 'return "hello"' } })
+      local sandbox = sandbox_root()
+      local transport = deferred()
+      local record = ui({ plan = false })
+
+      local handle = begin(root, sandbox, transport, record)
+      transport.emits[1](Events.tool_use("p1", "plan", PLAN))
+      transport.emits[1](Events.done("tool_calls"))
+      transport.emits[2](Events.done("complete"))
+
+      -- The plan was rejected, so the run is over with nothing left to steer.
+      t.eq(handle:steer("one more thing"), false)
+      t.eq(handle:steer("   "), false)
+    end)
   end)
 
   t.describe("vibe: describe_plan", function()

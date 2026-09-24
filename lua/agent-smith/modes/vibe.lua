@@ -101,9 +101,16 @@ end
 
 --- The message that starts the execute phase: the approved plan, restated as
 --- the contract the scope is enforcing.
+---
+--- `notes` are what the user typed while this was being planned or while it waited
+--- to be approved (see `session:steer`). They go in last and are stated as
+--- requirements rather than as background: they are the most recent thing the user
+--- said, and they were said with the plan in hand.
+---@param instruction string
 ---@param plan table { summary, steps, files }
+---@param notes string[]|nil
 ---@return string
-function M.execution_message(instruction, plan)
+function M.execution_message(instruction, plan, notes)
   local steps = {}
   for index, step in ipairs(plan.steps or {}) do
     steps[index] = ("%d. %s"):format(index, step)
@@ -114,7 +121,7 @@ function M.execution_message(instruction, plan)
     files[index] = ("- %s"):format(file)
   end
 
-  return table.concat({
+  local lines = {
     ("Request: %s"):format(instruction),
     "",
     ("Approved plan: %s"):format(plan.summary or "(no summary)"),
@@ -122,9 +129,20 @@ function M.execution_message(instruction, plan)
     "",
     ("Files you may modify (%d):"):format(#files),
     table.concat(files, "\n"),
-    "",
-    "Carry it out now.",
-  }, "\n")
+  }
+
+  if notes and #notes > 0 then
+    lines[#lines + 1] = ""
+    lines[#lines + 1] = ("Also required, added while this was being planned (%d):"):format(#notes)
+    for index, note in ipairs(notes) do
+      lines[#lines + 1] = ("%d. %s"):format(index, note)
+    end
+  end
+
+  lines[#lines + 1] = ""
+  lines[#lines + 1] = "Carry it out now."
+
+  return table.concat(lines, "\n")
 end
 
 --- The plan as the user reads it before approving.
@@ -298,7 +316,7 @@ function M.run(options)
   end
 
   local sandbox = config.sandbox or {}
-  local session = { cancelled = false, prompt = nil, loop = nil, clone = nil, phase = "prompt" }
+  local session = { cancelled = false, prompt = nil, loop = nil, clone = nil, phase = "prompt", notes = {} }
 
   -- A vibe run is two conversations, not one: the plan phase and the execute
   -- phase each start from their own system prompt and message list. The user
@@ -313,6 +331,43 @@ function M.run(options)
     end
     Usage.add(totals.usage, loop_result.usage)
     totals.turns = totals.turns + (loop_result.turns or 0)
+  end
+
+  --- Say something to the model while a phase is in flight.
+  ---
+  --- Where it goes depends on which phase. Before execution there is no conversation
+  --- that can act on the message — the plan is still being written, or it is waiting
+  --- to be approved — so it is held and handed to the executor as a note. Once
+  --- execution is running it goes to that loop, which queues it into the
+  --- conversation in flight.
+  ---
+  --- A note is deliberately **not** shown to the planner. The plan is approved by
+  --- the user before anything runs, so a note that contradicts it is caught at that
+  --- checkpoint rather than by the phase that is already finished writing.
+  ---
+  --- Checked against `finished` before the phase, because a rejection leaves the
+  --- session in its `approve` phase with no execution to come: holding a note there
+  --- would be a message accepted and then never delivered, which is the failure this
+  --- whole path exists to avoid.
+  ---@param text string
+  ---@return string|boolean "queued" when a loop took it, "notes" when it is held
+  ---   for execution, false when there is nothing it can reach.
+  function session:steer(text)
+    if self.finished or type(text) ~= "string" or vim.trim(text) == "" then
+      return false
+    end
+
+    if self.phase == "plan" or self.phase == "approve" then
+      self.notes[#self.notes + 1] = vim.trim(text)
+      return "notes"
+    end
+
+    if self.phase == "execute" and self.loop and type(self.loop.steer) == "function" then
+      return self.loop:steer(text) and "queued" or false
+    end
+
+    -- "prompt" has no run yet, and "review" has none left.
+    return false
   end
 
   function session:cancel()
@@ -346,6 +401,10 @@ function M.run(options)
     result.plan = result.plan or session.plan
     result.refusals = result.refusals or {}
 
+    -- Read by `session:steer`: a finished run has no request left to carry a
+    -- message, and the phase alone does not say so — a rejected plan leaves the
+    -- session in `approve` with nothing to come.
+    session.finished = true
     -- Every phase's cost, not just the last one's.
     result.summary = Usage.render(totals.usage, { turns = totals.turns })
     result.turns = totals.turns
@@ -496,7 +555,7 @@ function M.run(options)
       system = M.EXECUTE_PROMPT,
       id = Session.id({ root = root, mode = "vibe-execute" }),
     })
-    conversation:append_user(M.execution_message(session.instruction, plan))
+    conversation:append_user(M.execution_message(session.instruction, plan, session.notes))
 
     local tracker = live_progress(ui)
 
