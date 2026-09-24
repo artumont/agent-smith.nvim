@@ -312,8 +312,11 @@ plugin is exercised against the environment it will actually run in. There is no
 `plugin/` directory, so `setup()` must be called; `dev/init.lua` does it for you.
 
 An agent-smith you have *installed* — lazy.nvim's cache, a `pack/*/start` clone —
-is taken off the runtimepath first, so the checkout is what runs. The startup
-notification names any copy it ignored, and says so loudly when it could not.
+never gets loaded: the checkout is put where the plugin manager would look for it,
+any other copy is taken off the runtimepath, and module resolution is handed back
+to the runtimepath so the checkout wins. The startup notification says which copy
+was redirected, and reports loudly if the loaded module still came from
+somewhere else.
 
 Tests are headless Lua spec files under `test/spec/`, run with no plugins loaded.
 
