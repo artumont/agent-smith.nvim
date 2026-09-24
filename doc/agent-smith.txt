@@ -370,6 +370,10 @@ DEVELOPMENT                                       *agent-smith-development*
 plugin is exercised against the environment it actually runs in. A clean-room
 init is easier to reason about and hides every integration problem until release.
 
+An agent-smith you have installed — lazy.nvim's cache, a `pack/*/start` clone —
+is taken off the runtimepath first, so this checkout is the one that runs. The
+startup notification names any copy it ignored.
+
 Tests are headless Lua spec files under `test/spec/`.
 
 ==============================================================================

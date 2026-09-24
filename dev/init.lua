@@ -5,6 +5,11 @@
 --- leader key, your plugins, your options. A clean-room init is easier to reason
 --- about and hides every integration problem until release.
 ---
+--- Any copy of agent-smith your configuration installs — lazy.nvim's cache, a
+--- `pack/*/start` clone — is taken off the runtimepath before this repository is
+--- loaded, because a stale checkout answering `require("agent-smith")` is the
+--- exact confusion `make run` exists to prevent. See `ignore_cached_copies` below.
+---
 ---   make run                      your config, plus agent-smith
 ---   make run-clean                agent-smith alone, for when your config is
 ---                                 the thing that is broken
@@ -19,9 +24,53 @@ local function repository_root()
   return vim.fs.dirname(vim.fs.dirname(vim.fn.fnamemodify(source, ":p")))
 end
 
-local root = repository_root()
+local root = vim.fs.normalize(repository_root())
 
 local clean = vim.env.AGENT_SMITH_CLEAN == "1"
+
+--- Take every other copy of this plugin off the runtimepath.
+---
+--- Your configuration may well have agent-smith installed somewhere: lazy.nvim's
+--- cache, a `pack/*/start` clone, a `--cmd "set rtp+=..."`. Since your config is
+--- loaded first, that copy is on the runtimepath before this file runs, and it
+--- would answer `require("agent-smith")` — so `make run` would exercise an older
+--- checkout while looking like it was exercising this one.
+---
+--- Prepending the repository is not enough on its own. `package.loaded` may
+--- already hold the cached module from something your config required, and a
+--- plugin manager that loads the plugin lazily prepends its own directory when it
+--- does so, putting the cached copy back in front afterwards. Hence: called once
+--- before the prepend below, and again once startup has settled.
+---
+--- Only directories whose name contains "agent-smith" are touched, and never this
+--- checkout, so the rest of your runtimepath is left alone.
+---@return string[] removed Paths taken off the runtimepath.
+local function ignore_cached_copies()
+  local removed = {}
+
+  for _, path in ipairs(vim.api.nvim_list_runtime_paths()) do
+    local normalized = vim.fs.normalize(path)
+    if normalized ~= root and vim.fs.basename(normalized):find("agent-smith", 1, true) then
+      removed[#removed + 1] = path
+    end
+  end
+
+  if #removed == 0 then
+    return removed
+  end
+
+  vim.opt.runtimepath:remove(removed)
+
+  -- The loaded modules go with the path, or the cached copy stays in memory,
+  -- keeps answering every require, and the runtimepath edit accomplishes nothing.
+  for name in pairs(package.loaded) do
+    if name == "agent-smith" or name:sub(1, 12) == "agent-smith." then
+      package.loaded[name] = nil
+    end
+  end
+
+  return removed
+end
 
 --- Find the user's own init, whichever form it takes.
 local function user_init()
@@ -72,6 +121,7 @@ end
 --
 -- In Lua rather than via `--cmd "set rtp+=."`: an rtp change made through --cmd
 -- does not propagate to package.path either.
+local ignored = ignore_cached_copies()
 vim.opt.runtimepath:prepend(root)
 
 -- Deliberately not setting mapleader: the point is that the default keymaps
@@ -113,8 +163,61 @@ end
 
 smith.setup(options)
 
+--- Whether the module that answered `require` is this checkout.
+---
+--- The whole point of dropping the cached copies is that this one runs, so it is
+--- checked rather than assumed: a silent wrong-copy load is indistinguishable from
+--- `make run` seeing stale behaviour, which is the failure being fixed.
+---@return string|nil path Where the loaded module came from, when that is not this checkout.
+local function loaded_from_elsewhere()
+  local source = debug.getinfo(smith.setup, "S").source:sub(2)
+  source = vim.fs.normalize(source)
+  if source:sub(1, #root) == root then
+    return nil
+  end
+  return source
+end
+
+--- Drop the copies again, remembering everything taken off so far.
+---
+--- A plugin manager that loads plugin definitions later — on VeryLazy, on a
+--- keymap — prepends its own directory at that point, and `setup()` may run then
+--- too. Anything it puts back before this repository answered a require has to go,
+--- or the cached copy answers the next one.
+local function ignore_again()
+  for _, path in ipairs(ignore_cached_copies()) do
+    if not vim.tbl_contains(ignored, path) then
+      ignored[#ignored + 1] = path
+    end
+  end
+end
+
+-- Both events fire at most once, and an autocmd that never matches costs
+-- nothing, so a configuration that has no plugin manager pays only for the
+-- listener it never triggers.
+vim.api.nvim_create_autocmd("User", {
+  pattern = { "LazyDone", "VeryLazy" },
+  callback = ignore_again,
+})
+
 vim.schedule(function()
-  vim.notify(
-    ("agent-smith %s — %s"):format(smith.version, clean and "clean config" or "your config")
-  )
+  ignore_again()
+
+  local lines = {
+    ("agent-smith %s — %s"):format(smith.version, clean and "clean config" or "your config"),
+  }
+  if #ignored > 0 then
+    lines[#lines + 1] = ("ignoring the installed copy at %s"):format(table.concat(ignored, ", "))
+  end
+
+  local elsewhere = loaded_from_elsewhere()
+  if elsewhere then
+    lines[#lines + 1] = (
+      "loaded from %s, not this checkout — remove agent-smith from your plugin list"
+    ):format(elsewhere)
+    vim.notify(table.concat(lines, "\n"), vim.log.levels.ERROR)
+    return
+  end
+
+  vim.notify(table.concat(lines, "\n"))
 end)

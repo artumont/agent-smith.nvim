@@ -295,6 +295,10 @@ make help     # list targets
 plugin is exercised against the environment it will actually run in. There is no
 `plugin/` directory, so `setup()` must be called; `dev/init.lua` does it for you.
 
+An agent-smith you have *installed* — lazy.nvim's cache, a `pack/*/start` clone —
+is taken off the runtimepath first, so the checkout is what runs. The startup
+notification names any copy it ignored, and says so loudly when it could not.
+
 Tests are headless Lua spec files under `test/spec/`, run with no plugins loaded.
 
 ## Documentation
