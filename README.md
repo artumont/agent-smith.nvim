@@ -193,10 +193,25 @@ the cache hit rate.
 
 That is the wrong surface for a run that has stopped moving: one line looks the
 same whether the agent is thinking hard or hung. `<leader>am` (or `:Smith
-monitor`) opens the **event stream** in a split — every event, timestamped, with
-how long each tool call took — and it is recorded whether or not you were
-watching, so it can be read after the fact. Inside it: `q` closes, `X` cancels
-the run, `<C-c>` clears the log.
+monitor`) opens the **event stream** in a floating window — every event,
+timestamped, with how long each tool call took — and it is recorded whether or
+not you were watching, so it can be read after the fact.
+
+`s` in that window opens a **steer input** — a small bordered box docked inside
+its bottom edge, the same window shape as the instruction prompt. Type, `:w` to
+send, `q` to close. What you type is a **steer**: a message to the run in flight. It is
+queued and reaches the model with the next request, so it does not interrupt the
+turn already streaming, but it does give the run another turn if the model was
+finishing rather than silently dropping what you typed
+([ADR 0016](spec/decisions/0016-steering-is-delivered-on-the-next-turn.md)).
+
+Where it lands depends on the run. Inline sends it into the conversation that is
+running. A vibe run that is still **planning** holds it instead, and hands it to
+the executor as a note — the planner never sees it — because the plan has not been
+approved yet; once execution is running it is an extra instruction with the
+context the executor already has. The log says which happened.
+
+On the border: `s` steers, `q` closes, `X` cancels the run, `<C-c>` clears the log.
 
 A run that produces no event for two minutes is aborted by the loop rather than
 waiting forever, reporting what it was waiting on
@@ -210,7 +225,8 @@ waiting forever, reporting what it was waiting on
 | `<leader>as` | visual | Inline edit on the selection |
 | `<leader>av` | normal | Vibe run |
 | `<leader>ax` | normal | Cancel the run in flight |
-| `<leader>am` | normal | Open or close the event stream monitor |
+| `<leader>am` | normal | Open or close the event stream monitor, in a floating window |
+| `s` in the monitor | normal | Steer the run in flight (`:w` sends, `q` closes) |
 | `:Smith info` | | Version, provider, model, sandbox state |
 | `:Smith setup` | | Store a credential, interactively |
 | `:Smith model` | | Pick a model, for this session |

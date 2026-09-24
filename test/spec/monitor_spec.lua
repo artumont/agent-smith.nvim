@@ -1,6 +1,8 @@
 return function(t)
   local Monitor = require("agent-smith.ui.monitor")
   local Events = require("agent-smith.agent.events")
+  local Float = require("agent-smith.ui.float")
+  local Prompt = require("agent-smith.ui.prompt")
 
   --- A monitor on a clock the test drives, so elapsed times are exact.
   local function fresh()
@@ -235,7 +237,300 @@ return function(t)
     end)
   end)
 
+  --- The border hint as text, flattened for assertions about wording.
+  local function footer_text(monitor)
+    local parts = {}
+    for _, chunk in ipairs(vim.api.nvim_win_get_config(monitor.window).footer or {}) do
+      parts[#parts + 1] = chunk[1]
+    end
+    return table.concat(parts)
+  end
+
+  t.describe("monitor: steering", function()
+    --- A real run, steerable through the public API.
+    ---
+    --- Not a spy on `Smith.steer`: the point is that the input reaches the model,
+    --- so the test drives an actual inline run with a transport that answers when
+    --- the test says so, and reads the requests it was sent.
+    local function running_run()
+      local Smith = require("agent-smith")
+      local Inline = require("agent-smith.modes.inline")
+
+      local buffer = vim.api.nvim_create_buf(false, true)
+      vim.api.nvim_buf_set_name(buffer, "/tmp/monitor-steer/a.lua")
+      vim.api.nvim_buf_set_lines(buffer, 0, -1, false, { "local x = 1" })
+
+      local transport = { requests = {} }
+      function transport.run(request, on_event)
+        transport.requests[#transport.requests + 1] = request
+        transport.emit = on_event
+        return { cancel = function() end }
+      end
+
+      local handle = Smith.inline({
+        buffer = buffer,
+        range = { start_row = 1, end_row = 1 },
+        root = "/tmp/monitor-steer",
+        instruction = "do something",
+        transport = transport,
+        ui = {
+          notify = function() end,
+          approve = function()
+            return false
+          end,
+          progress = function()
+            return nil
+          end,
+        },
+      })
+
+      return { handle = handle, transport = transport, ui = Inline.default_ui }
+    end
+
+    --- Submit whatever is in the steer input, the way `:w` does.
+    local function submit(monitor, text)
+      vim.api.nvim_buf_set_lines(monitor.steer_handle.buffer, 0, -1, false, { text })
+      vim.api.nvim_exec_autocmds("BufWriteCmd", { buffer = monitor.steer_handle.buffer })
+      t.settle(function()
+        return monitor.steer_handle == nil
+      end, 500)
+    end
+
+    t.it("says when a steer is being held for execution", function()
+      -- A note that reaches the executor and not the planner looks identical to one
+      -- that reached nothing, unless the log says which it is.
+      local monitor = fresh()
+      monitor:steered("use a comma, not a full stop", "notes")
+
+      t.matches(
+        table.concat(view(monitor), "\n"),
+        "steer   held for execution — use a comma, not a full stop"
+      )
+      discard(monitor)
+    end)
+
+    t.it("docks a bordered input inside the bottom of the float", function()
+      local monitor = fresh()
+      monitor:open()
+      monitor:steer()
+
+      local input = vim.api.nvim_win_get_config(monitor.steer_handle.window)
+      local log = vim.api.nvim_win_get_config(monitor.window)
+      local expected = Monitor.steer_geometry(log)
+
+      t.eq(input.relative, "editor")
+      t.eq({ input.row, input.col, input.width, input.height },
+        { expected.row, expected.col, expected.width, expected.height })
+      t.eq(input.height, Monitor.STEER_HEIGHT)
+      t.eq(input.border[1], "╭", "a real border, not a table of empty strings")
+      t.ok(input.zindex > log.zindex, "drawn over the log")
+      t.eq(vim.api.nvim_get_current_win(), monitor.steer_handle.window, "ready to type in")
+
+      -- The whole frame — border included — lives inside the monitor's content
+      -- box. This is the regression: a top-only border built from empty strings
+      -- still reserves its cells, so the input's empty left border sat on the
+      -- monitor's own left border column and occluded it.
+      t.ok(input.row - 1 >= log.row, "the top border is inside the log's content")
+      t.ok(input.col - 1 >= log.col, "so is the left one")
+      t.ok(input.row + input.height + 1 <= log.row + log.height - 1, "and the bottom")
+      t.ok(input.col + input.width + 1 <= log.col + log.width - 1, "and the right")
+
+      monitor:close()
+      discard(monitor)
+    end)
+
+    t.it("sends what was typed with :w, and it reaches the conversation", function()
+      local run = running_run()
+      local monitor = fresh()
+      monitor:open()
+      monitor:steer()
+
+      submit(monitor, "also check the tests")
+
+      t.matches(table.concat(view(monitor), "\n"), "steer   also check the tests")
+      t.eq(vim.api.nvim_win_is_valid(monitor.window), true, "the log stays open")
+      t.eq(vim.api.nvim_get_current_win(), monitor.window, "and takes the cursor back")
+
+      -- The model sees it: the run goes on to another turn, whose request ends
+      -- with what was typed into the input.
+      run.transport.emit(Events.done("complete"))
+      local messages = run.transport.requests[#run.transport.requests].messages
+      t.eq(messages[#messages].role, "user")
+      t.eq(messages[#messages].content, "also check the tests")
+
+      run.transport.emit(Events.done("complete"))
+      require("agent-smith").cancel()
+
+      monitor:close()
+      discard(monitor)
+    end)
+
+    t.it("keeps a refused steer in the log rather than losing it", function()
+      -- A refusal looks identical to a model ignoring the user unless it is said
+      -- out loud, and the text has to survive so it can be sent again.
+      require("agent-smith").cancel()
+
+      local monitor = fresh()
+      monitor:open()
+      monitor:steer()
+
+      submit(monitor, "too late for this one")
+
+      local text = table.concat(view(monitor), "\n")
+      t.matches(text, "not sent, the run is over")
+      t.matches(text, "too late for this one")
+
+      monitor:close()
+      discard(monitor)
+    end)
+
+    t.it("abandons on cancel without sending anything", function()
+      local monitor = fresh()
+      monitor:open()
+      monitor:steer()
+
+      local input = monitor.steer_handle.buffer
+      vim.api.nvim_buf_set_lines(input, 0, -1, false, { "never mind" })
+      monitor.steer_handle.cancel()
+
+      t.not_ok(table.concat(view(monitor), "\n"):find("never mind", 1, true), "nothing logged")
+      t.eq(vim.api.nvim_win_is_valid(monitor.steer_handle.window), false, "the input is closed")
+
+      -- The prompt answers through vim.schedule, so the monitor's own reference is
+      -- dropped a tick later. `steer()` tolerates that by checking the window.
+      t.settle(function()
+        return monitor.steer_handle == nil
+      end, 500)
+      t.eq(monitor.steer_handle, nil)
+
+      monitor:close()
+      discard(monitor)
+    end)
+
+    t.it("stays docked when the monitor is redrawn", function()
+      -- The log redraws on every event and re-places its own float; the input has
+      -- to be moved by the same arithmetic or it drifts off the bottom.
+      local monitor = fresh()
+      monitor:open()
+      monitor:steer()
+
+      monitor:draw()
+      local input = vim.api.nvim_win_get_config(monitor.steer_handle.window)
+      local expected = Monitor.steer_geometry(vim.api.nvim_win_get_config(monitor.window))
+      t.eq(input.row, expected.row)
+      t.eq(input.width, expected.width)
+
+      monitor:close()
+      discard(monitor)
+    end)
+
+    t.it("closes the input along with the monitor", function()
+      local monitor = fresh()
+      monitor:open()
+      monitor:steer()
+      local input = monitor.steer_handle.window
+
+      monitor:close()
+      t.eq(vim.api.nvim_win_is_valid(input), false)
+      t.eq(monitor.steer_handle, nil)
+      discard(monitor)
+    end)
+
+    t.it("focuses the input instead of opening a second one", function()
+      local monitor = fresh()
+      monitor:open()
+      monitor:steer()
+      local first = monitor.steer_handle.window
+
+      vim.api.nvim_set_current_win(monitor.window)
+      monitor:steer()
+
+      t.eq(monitor.steer_handle.window, first)
+      t.eq(vim.api.nvim_get_current_win(), first)
+
+      monitor:close()
+      discard(monitor)
+    end)
+  end)
+
+  t.describe("monitor.steer_geometry", function()
+    t.it("fits a bordered box inside the window it docks in", function()
+      -- Given a monitor at row 2, col 3, 80 wide and 20 tall: two columns go to
+      -- the input's own border, and the box sits against the bottom of the
+      -- content with one row of border above and below it.
+      local at = Monitor.steer_geometry({ row = 2, col = 3, width = 80, height = 20 })
+      t.eq(at, { row = 18, col = 5, width = 76, height = 2 })
+
+      -- Border included, all four edges are within the monitor's content box:
+      -- nothing is asked for that belongs to the monitor's frame.
+      local log = { row = 2, col = 3, width = 80, height = 20 }
+      t.ok(at.row - 1 >= log.row)
+      t.ok(at.col - 1 >= log.col)
+      t.ok(at.row + at.height + 1 <= log.row + log.height - 1)
+      t.ok(at.col + at.width + 1 <= log.col + log.width - 1)
+    end)
+
+    t.it("never docks above the top of a short window", function()
+      local at = Monitor.steer_geometry({ row = 0, col = 0, width = 40, height = 3 }, 2)
+      t.eq(at.row, 0, "clamped to the window's own first row")
+      t.eq(at.height, 2)
+    end)
+
+    t.it("never wider than the window it docks in", function()
+      -- A box that ignores the arithmetic is drawn through the monitor's frame,
+      -- which is worse than a narrow input.
+      local at = Monitor.steer_geometry({ row = 0, col = 0, width = 20, height = 10 })
+      t.eq(at.width, 16)
+      t.ok(at.col - 1 >= 0)
+      t.ok(at.col + at.width + 1 <= 19)
+    end)
+  end)
+
   t.describe("monitor: the window", function()
+    t.it("opens a float like the prompt, with its keys on the border", function()
+      -- The shape is shared with ui/prompt.lua on purpose (ui/float.lua): a
+      -- centred float carrying its own keys, because a key that only exists in
+      -- the help is a key nobody finds.
+      local monitor = fresh()
+      t.eq(monitor:open(), true)
+
+      local config = vim.api.nvim_win_get_config(monitor.window)
+      t.eq(config.relative, "editor")
+      t.eq(config.style, "minimal")
+      t.eq(config.footer_pos, "center")
+      t.eq(config.title_pos, "left")
+      t.matches(config.title[1][1], "stream")
+
+      local footer = footer_text(monitor)
+      t.matches(footer, " s ")
+      t.matches(footer, " q ")
+      t.matches(footer, " X ")
+      t.matches(footer, "<C%-c>")
+
+      -- Redrawing reconfigures the float (that is how a resize is followed), and
+      -- reconfiguring must not drop the title or the hint.
+      monitor:draw()
+      t.eq(footer_text(monitor), footer, "the hint survives a redraw")
+      t.matches(vim.api.nvim_win_get_config(monitor.window).title[1][1], "stream")
+
+      -- Its own size, not the prompt's: a log needs more rows than an instruction.
+      local geometry = Float.geometry(vim.o.columns, vim.o.lines, Monitor.WIDTH, Monitor.HEIGHT)
+      t.eq(config.width, geometry.width)
+      t.eq(config.height, geometry.height)
+      t.ok(config.width > Prompt.WIDTH, "wider than the prompt window")
+      t.ok(config.height > Prompt.HEIGHT, "and taller")
+      -- Neovim resolves a named border into its characters; the corner is enough
+      -- to say it is a bordered box.
+      t.eq(config.border[1], "╭")
+
+      -- Inside the editor, border included.
+      t.ok(config.row + config.height + 1 <= vim.o.lines, "the bottom border fits")
+      t.ok(config.col + config.width + 1 <= vim.o.columns, "and the right one")
+
+      monitor:close()
+      discard(monitor)
+    end)
+
     t.it("records while closed and flushes when opened", function()
       -- The point of the whole thing: it is read after a run went wrong, so it
       -- has to hold that run whether or not anybody was watching.
@@ -263,6 +558,7 @@ return function(t)
       end
       t.ok(keys.q, "q closes the monitor")
       t.ok(keys.X, "X cancels the run")
+      t.ok(keys.s, "s opens the steer input")
       t.eq(vim.fn.hlexists("AgentSmithMonitorTool"), 1)
       discard(monitor)
     end)
@@ -271,7 +567,8 @@ return function(t)
       local monitor = fresh()
 
       monitor:toggle()
-      t.eq(vim.api.nvim_get_current_win(), monitor.window)
+      t.eq(vim.api.nvim_get_current_win(), monitor.window, "an entered float, so the log scrolls")
+      t.eq(vim.api.nvim_win_get_config(monitor.window).relative, "editor")
 
       monitor:toggle()
       t.eq(monitor:has_window(), false)
@@ -282,8 +579,32 @@ return function(t)
       discard(monitor)
     end)
 
-    t.it("hands out one monitor per session", function()
-      Monitor.reset()
+    t.it("does not rewrite a log that has not changed", function()
+      -- The spinner calls draw() eleven times a second. Rewriting every line,
+      -- re-applying a highlight per entry and reconfiguring both windows each time
+      -- measured 3.9 ms per tick at 2000 entries, almost all of it redrawing
+      -- identical text; a tick now writes at most one line.
+      local monitor = fresh()
+      for index = 1, 50 do
+        monitor:event(Events.usage({ input_tokens = index }))
+      end
+      monitor:open()
+      monitor:draw()
+
+      local after_first = vim.api.nvim_buf_get_changedtick(monitor.buffer)
+      for _ = 1, 5 do
+        monitor:draw()
+      end
+      t.eq(vim.api.nvim_buf_get_changedtick(monitor.buffer), after_first, "nothing to redraw")
+
+      -- An entry does change it, and only then.
+      monitor:event(Events.usage({ input_tokens = 1 }))
+      t.ok(vim.api.nvim_buf_get_changedtick(monitor.buffer) > after_first)
+
+      discard(monitor)
+    end)
+
+    t.it("hands out one monitor per session", function()      Monitor.reset()
       local first = Monitor.get()
       t.eq(Monitor.get(), first, "the same object, so the log is not duplicated")
 

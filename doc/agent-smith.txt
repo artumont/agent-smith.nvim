@@ -200,7 +200,7 @@ Keymaps, registered unless `default_keymaps` is false:
     <Leader>as      visual  Inline edit on the selection
     <Leader>av      normal  Vibe run
     <Leader>ax      normal  Cancel the run in flight
-    <Leader>am      normal  Open or close the event stream monitor
+    <Leader>am      normal  Open or close the event stream monitor (float)
 
                                                                             *:Smith*
 :Smith [info]           Version, provider, model and sandbox state.
@@ -248,20 +248,45 @@ A status line cannot show the difference between an agent that is thinking hard
 and one that has hung: both say "running <command>" and nothing changes. The
 monitor is the other surface.
 
-<Leader>am, or |:Smith| monitor, opens a split holding every event of the run so
-far: timestamped, with turn boundaries, the model's text, each tool call and its
-command or path, token usage, and how long the current tool call has been going.
-The header line shows the action, its elapsed time, and the usage summary.
+<Leader>am, or |:Smith| monitor, opens a floating window holding every event of
+the run so far: timestamped, with turn boundaries, the model's text, each tool
+call and its command or path, token usage, and how long the current tool call has
+been going. The header line shows the action, its elapsed time, and the usage
+summary. The same shape as the instruction prompt, centred over the editor.
 
 A hung command is therefore visible as a call that has been running for minutes,
 with the command the model asked for right above it. Events are recorded whether
 or not the window is open, so opening it after a run went wrong shows that run.
 
-While the monitor is focused:
+The keys are on the bottom border, because a key that only exists in the help is
+a key nobody finds:
 
-    q                   Close the split. The log is kept.
+    s                   Steer the run: type, then `:w` to send it, `q` to close.
+    q                   Close the window. The log is kept.
     X                   Cancel the run, the same as <Leader>ax.
     <C-c>               Throw the recorded log away.
+
+STEERING                                                     *agent-smith-steer*
+
+`s` divides off the bottom of the monitor for an input: a small bordered box, the
+same shape as the instruction prompt. Type a message and `:w` to send it, exactly
+as the prompt works; `q` closes without sending.
+
+What you type is queued and reaches the model with its next request. It does
+**not** interrupt the turn already streaming — a transport mid-answer cannot be
+re-told what its prompt is — but if the model was finishing, the run gets one
+more turn to answer you instead of throwing the message away. `max_turns` still
+bounds the run, and a steer that never left is shown in the log as not sent.
+
+Where it goes depends on the run:
+
+    inline              Into the conversation that is running.
+    vibe, planning      Held, and handed to the executor as a note. The planner
+                        does not see it. The log says "held for execution".
+    vibe, executing     An extra instruction, with the context already in hand.
+    nothing running     Refused, and the log says so rather than pretending.
+
+See spec/decisions/0016-steering-is-delivered-on-the-next-turn.md.
 
 The log keeps the last 2000 entries and shows how many were dropped once it
 starts dropping them. It is not a transcript: it records the events this client

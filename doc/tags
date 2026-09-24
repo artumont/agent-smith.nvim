@@ -20,5 +20,6 @@ agent-smith-picking	agent-smith.txt	/*agent-smith-picking*
 agent-smith-providers	agent-smith.txt	/*agent-smith-providers*
 agent-smith-requirements	agent-smith.txt	/*agent-smith-requirements*
 agent-smith-setup	agent-smith.txt	/*agent-smith-setup*
+agent-smith-steer	agent-smith.txt	/*agent-smith-steer*
 agent-smith-vibe	agent-smith.txt	/*agent-smith-vibe*
 agent-smith.txt	agent-smith.txt	/*agent-smith.txt*
