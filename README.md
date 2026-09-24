@@ -191,6 +191,33 @@ selection, because that is where you are already looking. Either way it stays
 under two lines and tells you the latest action and the token usage, including
 the cache hit rate.
 
+That is the wrong surface for a run that has stopped moving: one line looks the
+same whether the agent is thinking hard or hung. `<leader>am` (or `:Smith
+monitor`) opens the **event stream** in a floating window — every event,
+timestamped, with how long each tool call took — and it is recorded whether or
+not you were watching, so it can be read after the fact.
+
+`s` in that window opens a **steer input** — a small bordered box docked inside
+its bottom edge, the same window shape as the instruction prompt. Type, `:w` to
+send, `q` to close. What you type is a **steer**: a message to the run in flight. It is
+queued and reaches the model with the next request, so it does not interrupt the
+turn already streaming, but it does give the run another turn if the model was
+finishing rather than silently dropping what you typed
+([ADR 0016](spec/decisions/0016-steering-is-delivered-on-the-next-turn.md)).
+
+Where it lands depends on the run. Inline sends it into the conversation that is
+running. A vibe run that is still **planning** holds it instead, and hands it to
+the executor as a note — the planner never sees it — because the plan has not been
+approved yet; once execution is running it is an extra instruction with the
+context the executor already has. The log says which happened.
+
+On the border: `s` steers, `q` closes, `X` cancels the run, `<C-c>` clears the log.
+
+A run that produces no event for two minutes is aborted by the loop rather than
+waiting forever, reporting what it was waiting on
+([ADR 0014](spec/decisions/0014-stalled-runs-are-aborted.md)). Set
+`stall_timeout_ms` to `0` to turn that off.
+
 ### Keys
 
 | Key | Mode | Does |
@@ -198,10 +225,13 @@ the cache hit rate.
 | `<leader>as` | visual | Inline edit on the selection |
 | `<leader>av` | normal | Vibe run |
 | `<leader>ax` | normal | Cancel the run in flight |
+| `<leader>am` | normal | Open or close the event stream monitor, in a floating window |
+| `s` in the monitor | normal | Steer the run in flight (`:w` sends, `q` closes) |
 | `:Smith info` | | Version, provider, model, sandbox state |
 | `:Smith setup` | | Store a credential, interactively |
 | `:Smith model` | | Pick a model, for this session |
 | `:Smith provider` | | Pick a provider, for this session |
+| `:Smith monitor` | | Open or close the event stream monitor |
 | `:Smith version` | | Version only |
 | `:checkhealth agent-smith` | | Dependencies and configuration |
 
@@ -213,7 +243,8 @@ accepts, `d` denies, `q` or `<Esc>` denies.
 | Option | Default | |
 |---|---|---|
 | `commands` | `true` | Register `:Smith`. |
-| `default_keymaps` | `true` | Register the three keymaps above. |
+| `default_keymaps` | `true` | Register the keymaps above. |
+| `stall_timeout_ms` | `120000` | Abort a run that produces no event for this long. Inactivity, not duration; `0` disables. |
 | `provider` | `nil` | Preset name, or a table with a `base_url`. |
 | `model` | `nil` | Required for any run; there is no default on purpose. |
 | `sandbox.root` | `stdpath("cache")/agent-smith/sandbox` | Where clones are made. Must be absolute and outside the project. |
@@ -279,6 +310,13 @@ make help     # list targets
 `make run` loads your real configuration first and then the repository, so the
 plugin is exercised against the environment it will actually run in. There is no
 `plugin/` directory, so `setup()` must be called; `dev/init.lua` does it for you.
+
+An agent-smith you have *installed* — lazy.nvim's cache, a `pack/*/start` clone —
+never gets loaded: the checkout is put where the plugin manager would look for it,
+any other copy is taken off the runtimepath, and module resolution is handed back
+to the runtimepath so the checkout wins. The startup notification says which copy
+was redirected, and reports loudly if the loaded module still came from
+somewhere else.
 
 Tests are headless Lua spec files under `test/spec/`, run with no plugins loaded.
 

@@ -53,6 +53,16 @@ M.defaults = {
     position = "below",
   },
 
+  --- How long a run may produce nothing at all before it is aborted.
+  ---
+  --- Inactivity, not duration: a stream that keeps arriving is working, however
+  --- slow it is, and waiting on the user is not counted either. The failure this
+  --- catches is a tool call whose process died without ever reporting back,
+  --- which otherwise hangs the run forever. `0` disables the watchdog.
+  ---
+  --- See spec/decisions/0014-stalled-runs-are-aborted.md.
+  stall_timeout_ms = 120000,
+
   --- Which provider preset to use, and which model.
   ---
   --- There is deliberately no default model: it depends on what the account can
@@ -153,6 +163,13 @@ function M.validate(config)
   if progress.position ~= "above" and progress.position ~= "below" then
     return false,
       ('progress.position must be "above" or "below", got %s'):format(tostring(progress.position))
+  end
+
+  if type(config.stall_timeout_ms) ~= "number" or config.stall_timeout_ms < 0 then
+    return false,
+      ("stall_timeout_ms must be a number of milliseconds, 0 to disable, got %s"):format(
+        tostring(config.stall_timeout_ms)
+      )
   end
 
   local auth = config.auth

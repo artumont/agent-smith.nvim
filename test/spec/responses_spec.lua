@@ -218,7 +218,7 @@ return function(t)
           type = "response.completed",
           response = {
             usage = {
-              input_tokens = 100,
+              input_tokens = 1000,
               output_tokens = 20,
               input_tokens_details = { cached_tokens = 900 },
               output_tokens_details = { reasoning_tokens = 5 },
@@ -233,6 +233,8 @@ return function(t)
           usage = typed
         end
       end
+      -- 1000 total, 900 of them cached: the schema's `input_tokens` is the
+      -- 100 that were not. See transport/responses.lua.
       t.eq(usage.input_tokens, 100)
       t.eq(usage.output_tokens, 20)
       t.eq(usage.cache_read_tokens, 900)
@@ -243,9 +245,10 @@ return function(t)
       local events = collect(spawner({
         event({
           type = "response.completed",
-          response = { usage = { input_tokens = 1, cached_tokens = 7, reasoning_tokens = 8 } },
+          response = { usage = { input_tokens = 8, cached_tokens = 7, reasoning_tokens = 8 } },
         }),
       }))
+      t.eq(events[1].input_tokens, 1)
       t.eq(events[1].cache_read_tokens, 7)
       t.eq(events[1].reasoning_tokens, 8)
     end)

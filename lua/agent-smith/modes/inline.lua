@@ -19,8 +19,10 @@
 --- the answer arrives. A session whose preconditions fail returns nil and a
 --- reason without ever opening a prompt.
 
+local Identity = require("agent-smith.agent.identity")
 local Loop = require("agent-smith.agent.loop")
 local Messages = require("agent-smith.agent.messages")
+local Monitor = require("agent-smith.ui.monitor")
 local Paths = require("agent-smith.tools.paths")
 local Provider = require("agent-smith.providers")
 local Scope = require("agent-smith.agent.scope")
@@ -41,7 +43,8 @@ M.DEFAULT_POSITION = "above"
 ---
 --- Short on purpose. The tool schemas already describe the tools, and the
 --- permission system enforces the bound, so the prompt only has to stop the
---- model from being surprised by either.
+--- model from being surprised by either. Who it *is* comes from
+--- `agent/identity.lua`, which this is passed through on its way to the model.
 M.SYSTEM_PROMPT = table.concat({
   "You are editing one region of one file inside a running Neovim.",
   "",
@@ -115,6 +118,14 @@ function M.default_ui()
     end,
     notify = function(message, level)
       vim.notify(message, level or vim.log.levels.INFO)
+    end,
+    -- The event stream, recorded for the monitor whether or not it is on screen.
+    -- Every run feeds it, and `:Smith monitor` / <leader>am is what opens it.
+    event = function(event)
+      Monitor.get():event(event)
+    end,
+    done = function(result)
+      Monitor.get():done_run(result)
     end,
     progress = function(fields)
       return progress.new(fields)
@@ -216,6 +227,19 @@ function M.run(options)
     return true
   end
 
+  --- Say something to the model while the run is in flight.
+  ---
+  --- Forwarded to the loop, which only accepts it while it is still running — so
+  --- a steer that arrives after the loop finished is refused by the same rule as one
+  --- for a run that never started, rather than being quietly held.
+  ---@return string|boolean "queued" when the loop took it, false when it could not.
+  function session:steer(text)
+    if self.loop and type(self.loop.steer) == "function" then
+      return self.loop:steer(text) and "queued" or false
+    end
+    return false
+  end
+
   --- Everything after the instruction is known.
   local function start(instruction)
     if session.cancelled then
@@ -225,7 +249,7 @@ function M.run(options)
     local lines = vim.api.nvim_buf_get_lines(buffer, range.start_row - 1, range.end_row, false)
 
     local conversation = Messages.new({
-      system = M.SYSTEM_PROMPT,
+      system = Identity.system(M.SYSTEM_PROMPT),
       id = Session.id({ root = root, mode = M.MODE }),
     })
     conversation:append_user(user_message(Paths.display(root, name), range, lines, instruction))
@@ -254,6 +278,7 @@ function M.run(options)
       scope = scope,
       conversation = conversation,
       max_turns = options.max_turns,
+      stall_timeout_ms = config.stall_timeout_ms,
       on_event = function(event)
         if tracker then
           tracker:event(event)
@@ -269,9 +294,19 @@ function M.run(options)
         if tracker then
           tracker:finish(result)
         end
+        if ui.done then
+          ui.done(result)
+        end
         if ui.notify and result.summary then
+          -- The cause goes in the same line as the cost. A run that stopped
+          -- badly and reports only its token usage tells the user nothing about
+          -- what went wrong, which is exactly the case a stall produces.
+          local message = result.summary
+          if not result.ok and result.error then
+            message = ("%s — %s"):format(message, result.error)
+          end
           ui.notify(
-            ("agent-smith: %s"):format(result.summary),
+            ("agent-smith: %s"):format(message),
             result.ok and vim.log.levels.INFO or vim.log.levels.WARN
           )
         end

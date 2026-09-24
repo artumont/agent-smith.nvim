@@ -26,6 +26,7 @@ lua/agent-smith/
     commandcode.lua     Command Code
 
   agent/
+    identity.lua        who the model is told it is, in front of every prompt
     events.lua          typed event schema — the core contract
     loop.lua            turn loop, dispatch, stop conditions, cancel
     messages.lua        conversation state (compaction not designed yet)
@@ -58,10 +59,13 @@ lua/agent-smith/
     vibe.lua            plan, approve, execute, review
 
   ui/
+    float.lua           the centred float prompt and monitor are built from
     prompt.lua          instruction entry, in a floating buffer
     approval.lua        approving an escalated tool call
     progress.lua        run status as virtual lines, for inline
     panel.lua           run status as a floating corner panel, for vibe
+    monitor.lua         the event stream, in a floating scratch buffer, and the
+                        steer input docked along its bottom
     diff.lua            reviewing a patch before it is applied
 ```
 
@@ -83,6 +87,22 @@ ui/modes ──prompt──> agent/loop ──request──> transport ──SSE
 The loop's only inputs and outputs are typed events
 ([0002](decisions/0002-typed-event-contract.md)). It has no knowledge of vendors
 and no knowledge of Neovim buffers.
+
+Each mode's system prompt is its own body behind the shared identity paragraph in
+`agent/identity.lua`, which is what stops a model asserting a tool this plugin does
+not have because it believes it is a different product. There are three prompts —
+one per phase — so the identity is composed in one place rather than copied into
+each.
+
+Both modes tap the stream twice: once for the status display, and once for
+[`ui/monitor.lua`](decisions/0015-the-event-stream-is-visible.md), which records
+every event in a scratch buffer so a run can be read back after the fact. The
+status says what is happening; the monitor is the evidence.
+
+A turn that produces no event at all is a stall, and the loop aborts it rather
+than waiting forever ([0014](decisions/0014-stalled-runs-are-aborted.md)). The
+budget is inactivity, not duration, so a slow stream is never mistaken for a
+hung one, and it is disarmed while a permission question is pending.
 
 ### Transport interface
 
@@ -107,6 +127,16 @@ A tool may answer `needs_permission` instead of running. The loop asks the
 caller, and on approval grants that exact target once in the scope and
 re-dispatches the same call. With nobody to ask, the request is refused:
 silence is not consent.
+
+### Steering
+
+The handle's other verb is `steer(text)`: a message for the model while the run is
+in flight, which the monitor's `s` input sends. It is **queued**, not appended on
+arrival, and flushed at the start of the next turn — after any tool results, which
+is the only place in the conversation a user message is valid mid-run. A steer
+that arrives as the model stops gives the run one more turn rather than being
+dropped, `max_turns` still bounds it, and what never left is counted in the
+result. See [0016](decisions/0016-steering-is-delivered-on-the-next-turn.md).
 
 ## The two modes
 

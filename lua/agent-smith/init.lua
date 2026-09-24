@@ -8,12 +8,12 @@ local Config = require("agent-smith.config")
 
 local M = {}
 
-M.version = "0.2.0"
+M.version = "0.2.1"
 
 --- Resolved configuration. Nil until setup() is called.
 M.config = nil
 
-local SUBCOMMANDS = { "info", "model", "provider", "setup", "version" }
+local SUBCOMMANDS = { "info", "model", "monitor", "provider", "setup", "version" }
 
 local function notify(message, level)
   vim.notify("agent-smith: " .. message, level or vim.log.levels.INFO)
@@ -184,6 +184,41 @@ function M.choose_provider()
   })
 end
 
+--- Show what the agent is doing, event by event, in a split.
+---
+--- The status line says what is happening now; this is the other half — every
+--- event, timestamped, with how long each tool call took. It is what makes a run
+--- that has stopped moving distinguishable from one that is thinking hard, since
+--- from a one-line status the two look identical.
+---
+--- Toggles, so the same key closes it again. Inside the monitor: `q` closes it,
+--- `X` cancels the run, `<C-c>` clears the log. See agent-smith.ui.monitor.
+---@return table monitor
+function M.monitor()
+  local monitor = require("agent-smith.ui.monitor").get()
+  monitor:toggle()
+  return monitor
+end
+
+--- Say something to the run in flight, for the model to reach on its next turn.
+---
+--- Queued rather than delivered to the turn already streaming, because a transport
+--- mid-answer cannot be re-told what the prompt is. What the answer means depends
+--- on the mode and the phase — a vibe run holds it as an execution note while it is
+--- still planning — so this returns whatever the run said it did:
+--- see spec/decisions/0016-steering-is-delivered-on-the-next-turn.md.
+---
+--- A falsy answer means nothing took it: text that appears accepted and is then
+--- delivered nowhere looks exactly like a model that ignored it.
+---@param text string
+---@return string|boolean "queued", "notes", or false when there is nothing to steer.
+function M.steer(text)
+  if active and type(active.steer) == "function" then
+    return active.steer(active, text)
+  end
+  return false
+end
+
 --- Stop the in-flight request, if there is one.
 ---@return boolean cancelled
 function M.cancel()
@@ -229,6 +264,8 @@ local function handle_command(args)
     M.choose_model(args.fargs[2])
   elseif subcommand == "provider" then
     M.choose_provider()
+  elseif subcommand == "monitor" then
+    M.monitor()
   elseif subcommand == "setup" then
     M.onboard(args.fargs[2])
   elseif subcommand == "version" then
@@ -263,9 +300,10 @@ end
 
 local function register_keymaps()
   local maps = {
-    { mode = "v", lhs = "<leader>as", rhs = M.inline, desc = "agent-smith inline edit" },
-    { mode = "n", lhs = "<leader>av", rhs = M.vibe, desc = "agent-smith vibe" },
-    { mode = "n", lhs = "<leader>ax", rhs = M.cancel, desc = "agent-smith cancel" },
+    { mode = "v", lhs = "<leader>as", rhs = M.inline, desc = "Prompt inline edit" },
+    { mode = "n", lhs = "<leader>av", rhs = M.vibe, desc = "Prompt vibe session" },
+    { mode = "n", lhs = "<leader>ax", rhs = M.cancel, desc = "Cancel ongoing agent sessions" },
+    { mode = "n", lhs = "<leader>am", rhs = M.monitor, desc = "Monitor ongoing agent sessions" },
   }
   for _, map in ipairs(maps) do
     vim.keymap.set(map.mode, map.lhs, map.rhs, { desc = map.desc })

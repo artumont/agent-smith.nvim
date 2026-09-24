@@ -223,7 +223,13 @@ return function(t)
       local transport = fake({})
       run({ buffer = f.buffer, root = f.root, instruction = "x", transport = transport, ui = ui() })
 
-      t.matches(transport.requests[1].system, "only place you may write")
+      local system = transport.requests[1].system
+      t.matches(system, "only place you may write")
+
+      -- And it is told what it is before it is told what to do: the identity is the
+      -- first thing in the prompt, not a line somewhere in the middle.
+      local intro = require("agent-smith.agent.identity").intro()
+      t.ok(system:find(intro, 1, true) == 1, "the identity comes first")
     end)
 
     t.it("identifies the conversation as inline", function()
@@ -337,6 +343,53 @@ return function(t)
 
       t.ok(#record.notifications > 0, "the user should be told something")
       t.matches(record.notifications[#record.notifications], "90%% cache hit")
+    end)
+
+    t.it("says why when the run stopped badly", function()
+      -- A failure that reports only its token usage tells the user nothing
+      -- about what went wrong, which is exactly what a stall produces.
+      local f = fixture({ "a" }, 1, 1)
+      local record = ui()
+      local transport = fake({
+        {
+          Events.usage({ input_tokens = 10 }),
+          Events.error("the vendor fell over"),
+        },
+      })
+
+      run({ buffer = f.buffer, root = f.root, instruction = "x", transport = transport, ui = record })
+
+      local message = record.notifications[#record.notifications]
+      t.matches(message, "10 in")
+      t.matches(message, "the vendor fell over")
+    end)
+
+    t.it("forwards a steer to the loop that is running", function()
+      -- The monitor's steer input reaches the loop through the session, and the
+      -- session is the only thing that knows which phase is in flight.
+      local f = fixture({ "a" }, 1, 1)
+      local transport = {}
+      function transport.run(_, on_event)
+        transport.emit = on_event
+        return { cancel = function() end }
+      end
+
+      local outcome = run({
+        buffer = f.buffer,
+        root = f.root,
+        instruction = "x",
+        transport = transport,
+        ui = ui(),
+      })
+
+      t.eq(outcome.handle:steer("check the tests too"), "queued")
+      -- The steer gives the run another turn, so one terminal event is not enough.
+      transport.emit(Events.done("complete"))
+      transport.emit(Events.done("complete"))
+
+      t.eq(outcome.results[1].ok, true)
+      t.eq(outcome.results[1].steered, 1)
+      t.eq(outcome.handle:steer("too late"), false, "and refuses once the run is over")
     end)
 
     t.it("passes max_turns through", function()

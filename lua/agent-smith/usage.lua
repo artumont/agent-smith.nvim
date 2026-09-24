@@ -39,6 +39,12 @@ end
 
 --- The share of prompt tokens served from cache.
 ---
+--- `input_tokens` and `cache_read_tokens` are disjoint by contract, so the
+--- prompt is their sum (spec/events.md). This is why the OpenAI-shaped
+--- adapters subtract the cached count from the vendor's total before emitting
+--- it: with a vendor total in `input_tokens` the cached prefix would be counted
+--- twice and the rate could never exceed 50%.
+---
 --- Returns nil rather than zero when no prompt tokens were reported: "nothing
 --- measured" and "measured, and it always missed" are different problems and a
 --- zero would hide the first.

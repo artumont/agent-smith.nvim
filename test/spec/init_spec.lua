@@ -22,6 +22,8 @@ return function(t)
     t.it("registers the default keymaps", function()
       t.eq(vim.fn.maparg(",as", "v") ~= "", true, "visual inline keymap")
       t.eq(vim.fn.maparg(",av", "n") ~= "", true, "normal vibe keymap")
+      t.eq(vim.fn.maparg(",ax", "n") ~= "", true, "cancel keymap")
+      t.eq(vim.fn.maparg(",am", "n") ~= "", true, "stream monitor keymap")
     end)
 
     t.it("can skip keymaps", function()
@@ -43,6 +45,16 @@ return function(t)
       -- keymaps and documentation do not need to change when they land.
       t.eq(type(Smith.inline), "function")
       t.eq(type(Smith.vibe), "function")
+      t.eq(type(Smith.monitor), "function")
+      t.eq(type(Smith.steer), "function")
+    end)
+
+    t.it("refuses to steer when there is nothing to steer", function()
+      -- A refusal has to be distinguishable from a message that was accepted and
+      -- then delivered nowhere, because the second reads as a model ignoring the
+      -- user.
+      Smith.cancel()
+      t.eq(Smith.steer("anyone there?"), false)
     end)
 
     t.it("does not raise when a mode is invoked", function()

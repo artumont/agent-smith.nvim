@@ -4,6 +4,7 @@ return function(t)
   local Loop = require("agent-smith.agent.loop")
   local Scope = require("agent-smith.agent.scope")
   local Registry = require("agent-smith.tools.registry")
+  local Usage = require("agent-smith.usage")
 
   --- A process spawner that replays scripted output instead of running curl.
   local function scripted(chunks, result)
@@ -406,10 +407,37 @@ return function(t)
         end
       end
 
-      t.eq(usage.input_tokens, 11)
+      -- The schema's `input_tokens` is the *uncached* part of the prompt:
+      -- `prompt_tokens` is the total and already contains the 3 cached ones.
+      -- Reporting 11 here would count them twice in the cache hit rate, which
+      -- would then be capped at 50%.
+      t.eq(usage.input_tokens, 8)
       t.eq(usage.output_tokens, 4)
       t.eq(usage.cache_read_tokens, 3)
       t.eq(usage.reasoning_tokens, 2)
+    end)
+
+    t.it("reports no fresh input tokens when the whole prompt was cached", function()
+      -- The failure this guards against: input_tokens = prompt_tokens made the
+      -- best possible cache report exactly 50%.
+      local events = collect(spawner({
+        chunk({
+          choices = {},
+          usage = { prompt_tokens = 512, prompt_tokens_details = { cached_tokens = 512 } },
+        }),
+        chunk("[DONE]"),
+      }))
+
+      local usage
+      for _, event in ipairs(events) do
+        if event.type == "usage" then
+          usage = event
+        end
+      end
+
+      t.eq(usage.input_tokens, 0)
+      t.eq(usage.cache_read_tokens, 512)
+      t.eq(Usage.hit_rate(Usage.add(nil, usage)), 1)
     end)
 
     t.it("does not emit a usage event with no token fields", function()

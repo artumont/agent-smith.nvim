@@ -64,11 +64,21 @@ Token fields, all optional individually, non-negative numbers when present:
 
 | Field | Notes |
 |---|---|
-| `input_tokens` | Prompt tokens |
+| `input_tokens` | **Uncached** prompt tokens. See the note below |
 | `output_tokens` | Generated tokens |
 | `cache_read_tokens` | Anthropic `cache_read_input_tokens`, OpenAI cached prompt tokens |
 | `cache_write_tokens` | Anthropic `cache_creation_input_tokens` |
 | `reasoning_tokens` | Billed reasoning tokens, where the vendor separates them |
+
+`input_tokens` and `cache_read_tokens` are **disjoint**: the prompt is
+`input_tokens + cache_read_tokens`, and `cache_read_tokens` is never part of
+`input_tokens`. That is what Anthropic reports natively, and it is what the
+OpenAI-shaped adapters have to be converted into, because OpenAI's
+`prompt_tokens` (chat completions) and `input_tokens` (Responses) are totals
+that *include* the cached tokens. Reporting a vendor total as `input_tokens`
+counts the cached prefix twice in `agent-smith.usage.hit_rate`, which caps the
+reported rate at 50% no matter how well the prefix caches — the bug behind
+[0013](decisions/0013-usage-input-tokens-excludes-cached.md).
 
 At least one must be present. A `usage` event may occur **more than once** in a
 single stream — Anthropic reports input tokens at message start and output
